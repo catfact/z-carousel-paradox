@@ -1,4 +1,6 @@
-//--- ZCarouselParadox
+
+//------------------------------------------------
+//-- ZCarouselParadox
 //-- a performance-oriented audio effect
 //-- based on slew-rate limited delay modulation
 //-- with companding in the input / feedback loop
@@ -7,30 +9,151 @@
 // handles connections to system audio and MIDI,
 // basic group structure / node ordering,
 // and owns the processor and control modules
+//
+// (same as to `ZAudioContext` prototyping environment)
 ZCarouselParadox {
-	var <server;
-	var <processor;
+	classvar <patchLevelLagTime = 0.05;
 
-	*new { arg server;
-		^super.newCopyArgs(server).init
+	var <server;
+	var <hwInNumChannels;
+	var <hwOutNumChannels;
+	var <hwInChannelOffset;
+	var <hwOutChannelOffset;
+
+	var <bus;
+	var <patch;
+	var <group;
+
+	var <processor;
+	var <midiController;
+	var <midiInput;
+
+
+	*sendSynthDefs { arg server;
+
+		// main processor synthdefs
+		ZCarouselProcessor.sendSynthDefs(server);
+
+		// utility synthdefs
+		SynthDef.new(\patch_mono,{
+			Out.ar(\out.kr(0), In.ar(\in.kr, 1) * \level.kr(1, \levelLag.kr(patchLevelLagTime)));
+		}).send(server);
+
+		SynthDef.new(\patch_stereo,{
+			var levelLag = \levelLag.kr(patchLevelLagTime);
+			Out.ar(\out.kr,
+				In.ar(\in.kr, 2) * \level.kr(1, levelLag));
+		}).send(server);
+
+		SynthDef.new(\patch_pan,{
+			var snd = In.ar(\in.kr, 1) * \level.kr(1, \levelLag.kr(patchLevelLagTime));
+			Out.ar(\out.kr, Pan2.ar(snd, \pan.kr(0, \panLag.kr(patchLevelLagTime))));
+		}).send(server);
+
+		SynthDef.new(\adc_mono, {
+			Out.ar(\out.kr, SoundIn.ar(\in.kr(0)) * \level.kr(1, \levelLag.kr(patchLevelLagTime)));
+		}).send(server);
+
+		SynthDef.new(\adc_stereo, {
+			var levelLag = \levelLag.kr(patchLevelLagTime);
+			var in = \in.kr(0);
+			Out.ar(\out.kr, SoundIn.ar([in, in+1]) * \level.kr(1, levelLag));
+		}).send(server);
+
+		SynthDef.new(\adc_pan, {
+			var snd = SoundIn.ar(\in.kr(0), 1) * \level.kr(1, \levelLag.kr(patchLevelLagTime));
+			Out.ar(\out.kr, Pan2.ar(snd, \pan.kr(0, \panLag.kr(patchLevelLagTime))));
+		}).send(server);
+
+	}
+
+	*new { arg server,
+		hwInNumChannels=1,
+		hwOutNumChannels=2,
+		hwInChannelOffset=0,
+		hwOutChannelOffset=0;
+
+		^super.newCopyArgs(server, hwInNumChannels, hwOutNumChannels, hwInChannelOffset, hwOutChannelOffset).init;
 	}
 
 	init {
+		//-----------------------------------
+		//--- generic stuff
+		/// groups
+		group = Dictionary.new;
+		// group to hold (internal) input patches
+		group[\in] = Group.new(server);
+		// group to hold processing synths
+		group[\process] = Group.after(group[\in]);
+		// group to hold (internal) output patches
+		group[\out] = Group.after(group[\out]);
 
+		/// busses
+		bus = Dictionary.new;
+		bus[\hw_in] = Bus.audio(server, 2);
+		bus[\hw_out] = Bus.audio(server, 2);
+
+		postln("hwInNumChannels: " ++ hwInNumChannels);
+
+		/// I/O patch synths
+		patch = Dictionary.new;
+		patch[\hw_in] = if (hwInNumChannels > 1, {
+			postln("patching stereo HW input to main input bus");
+			Synth.new(\adc_stereo, [
+				\in, hwInChannelOffset, \out, bus[\hw_in].index,
+			], group[\in], \addBefore);
+		}, {
+			postln("panning mono HW input to main input bus");
+			Synth.new(\adc_pan, [
+				\in, hwInChannelOffset, \out, bus[\hw_in].index
+			], group[\in], \addBefore);
+		});
+
+		patch[\hw_out] = Synth.new(\patch_stereo, [
+			\in, bus[\hw_out].index, \out, hwOutChannelOffset
+		], group[\out], \addAfter);
+
+
+		//-----------------------------------
+		//--- specific stuff
+		processor = ZCarouselProcessor.new(this);
+		midiController = ZCarouselMidiController.new(processor);
+
+		// NB: the generic MIDI input wrapper could just as well be left outside this class
+		// (probably better/ more flexible in fact)
+		// but here i'm including it to keep things more self-contained
+		midiInput = ZCarouselMidiInput.new(nil, nil, true);
+		midiInput.verbose = true;
+		midiInput.noteon({
+			arg num, vel;
+			midiController.noteOn(num);
+		});
+		midiInput.noteoff({
+			arg num, vel;
+			midiController.noteOff(num);
+		});
+//		midiInput.cc();
 	}
 }
 
-// a single "processor module", incorporating echo and companding
-// defines the single large synthdef used for everythoing
+//------------------------------------------------------------
+// ZCarouselProcessor: top-level effect module
+// defines the single large synthdef used for echo + companding
 ZCarouselProcessor  {
 
 	// make the buffer long enough to act as a decent looper
 	classvar bufferLength = 32.0;
 
+	var <context; // a `ZCarouselParadox`
 	var <server;
 	var <buffer;
 	var <synth;
 	var <bus;
+	var <patch;
+	var <intervalMode;
+
+	// user-settable function taking a note interval and returning a frequency ratio
+	var <>tuningFunction;
 
 	*sendSynthDefs { arg server;
 
@@ -73,7 +196,7 @@ ZCarouselProcessor  {
 			var freeze = Lag.ar(K2A.ar(\freeze.kr(0)), \freezeLag.kr(0.2));
 			//var freeze = 0;
 
-			 var feedback = output *  \feedbackLevel.kr(0);
+			var feedback = output *  \feedbackLevel.kr(0);
 
 			// sum input with feedback
 			var input = In.ar(\in.kr, 2) + feedback;
@@ -118,19 +241,48 @@ ZCarouselProcessor  {
 		def.send(server);
 	}
 
-	*new { arg server;
-		^super.newCopyArgs.init;
+	*new { arg context;
+		^super.newCopyArgs(context).init;
 	}
 
 	init {
+		// NB: assumes that this is constructed in a Thread/Routine!
+		server = context.server;
 		buffer = Buffer.alloc(server, server.sampleRate * bufferLength, 2);
+		server.sync;
 		synth = Synth.new(\ZCarouselProcessor, [
-			\
-		]);
+			\buffer, buffer,
+			\in, context.group[\hw_in],
+			\out, context.group[\hw_out],
+		], context.group[\process]);
+
+		tuningFunction = { arg interval;
+			interval.midiratio
+		};
 	}
 
 	setNoteInterval { arg interval;
-		// TODO
+		if (interval == 0, {
+			// do nothing
+		}, {
+			if (intervalMode == \symmetric, {
+				// in "symmetric" mode, both negative and positive intervals affect both slew directions
+				var ratio = tuningFunction.value(interval.abs);
+				synth.set(\delayTimeSlewUp, ratio + 1);
+				synth.set(\delayTimeSlewDown, ratio - 1);
+			}, {
+				// otherwise, negative interval sets negative slew, and positive interval likewise
+				if (interval > 0, {
+					synth.set(\delayTimeSlewDown, tuningFunction.value(interval) - 1);
+				}, {
+					synth.set(\delayTimeSlewUp, tuningFunction.value(interval.neg) + 1);
+				});
+			});
+		});
+
+		//----====----====----====----====----====----====
+		// exercise: other behaviors are possible here.
+		// for example, slew intervals could yield downward pitch adjustments...
 	}
 
 	setEchoTime { arg time;
@@ -138,23 +290,97 @@ ZCarouselProcessor  {
 	}
 }
 
-// MIDI control structure designed to connect to a single processor module
-ZCarouselMidiControls {
+//------------------------------------------------------------
+// ZCarouselMidiInput: MIDI I/O glue class
+// (same as `ZSimpleMidiControl` from prototyping environment)
+ZCarouselMidiInput {
+	var <port, <dev;
+	var <ccFunc; // array of functions
+	var <noteOnFunc;
+	var <noteOffFunc;
+
+	var <>verbose = false;
+	var <>channel = nil;
+
+	*new { arg deviceName=nil, portName=nil, connectAll=false;
+		^super.new.init(deviceName, portName, connectAll);
+	}
+
+	init {
+		arg deviceName, portName, connectAll;
+		MIDIClient.init;
+
+		if (connectAll, {
+			MIDIIn.connectAll;
+		}, {
+			var endpoint = MIDIIn.findPort(deviceName, portName);
+			if (endpoint.isNil, {
+				postln ("ERROR: couldn't open device and port: " ++ deviceName ++ ", " ++ portName);
+			});
+		});
+
+		ccFunc = Array.newClear(128);
+
+		MIDIIn.addFuncTo(\control, { arg uid, chan, num, val;
+			if (channel.isNil || (chan == channel), {
+				if (verbose, { [uid, chan, num, val].postln; });
+				if (ccFunc[num].notNil, {
+					ccFunc[num].value(val);
+				});
+			});
+		});
+
+		MIDIIn.addFuncTo(\noteOn, { arg uid, chan, num, vel;
+			if (channel.isNil || (chan == channel), {
+				if (verbose, { [uid, chan, num, vel].postln; });
+				if (noteOnFunc.notNil, { noteOnFunc.value(num, vel); });
+			});
+		});
+
+
+		MIDIIn.addFuncTo(\noteOff, { arg uid, chan, num, vel;
+			if (channel.isNil || (chan == channel), {
+				if (verbose, { [uid, chan, num, vel].postln; });
+				if (noteOffFunc.notNil, { noteOffFunc.value(num, vel); });
+			});
+		});
+	}
+
+	// set a handler for a given CC numnber
+	cc { arg num, func;
+		ccFunc[num] = func;
+	}
+
+	noteon { arg func;
+		noteOnFunc = func;
+	}
+
+	noteoff { arg func;
+		noteOffFunc = func;
+	}
+}
+
+//---------------------------------------------------------------------------------------
+// ZCarouselMidiController: class implementing MIDI control logic for a single processsor
+
+ZCarouselMidiController {
+	// specific logic
 	var <processor;
 	var <pedalState;
 	var <tapStartTime;
 	var <lastBaseNote;
 	var <numHeldNotes;
 
+
 	*new { arg processor;
 		^super.newCopyArgs(processor).init
 	}
 
 	init {
-		pedalState = Dictionary.with(
+		pedalState = Dictionary.newFrom([
 			\sustain, false,
 			\mute, false
-		);
+		]);
 		lastBaseNote = nil;
 		numHeldNotes = 0;
 	}
@@ -214,28 +440,32 @@ ZCarouselMidiControls {
 	}
 }
 
+//---------------------------------------------------------------------
 ///---- additional DSP classes
 //-- _because reasons_, it turns out to be better to roll all the DSP into a single synthdef
 //-- but it still seems helpful to organize some peripheral functions away from the main processor
 
-// functions for stereo imaging
+//---------------------------------------------------------------------
+// ZCarouselStereoImage: collection of DSP functions for stereo imaging
 ZCarouselStereoImage {
 	classvar scale = 0.7071067811865475; // == 1 / sqrt(2)
 
 	*midSideFlip {
 		arg in, // assumed stereo input
 		midGain=1, sideGain=1, // separate mid/side levels
-		bias=0,     // L/R bias in [-1, 1] - applied first
+		bias=0,     // L/R bias in [-1, 1] - applied after M/S, before flip
 		flip=0;     // inversion mix (in [0, 1]) - applied last
 		var mid, side, l, r, input, output;
-		// fixme: nicer pan law would be nicer
-		input = [in[0] * (1-bias), in[1] * (1+bias)];
-		mid = (input[0] + input[1]) * scale;
-		side = (input[0] - input[1]) * scale;
+
+		mid = (in[0] + in[1]) * scale;
+		side = (in[0] - in[1]) * scale;
 		mid = mid * midGain;
 		side = side * sideGain;
 		l = (mid+side) * scale;
 		r = (mid-side) * scale;
+		// fixme: nicer pan law would be... nicer
+		l = l * (1-bias);
+		r = r * (1+bias);
 		output = [
 			SelectX.ar(flip, [l, r]),
 			SelectX.ar(flip, [r, l]),
@@ -244,7 +474,8 @@ ZCarouselStereoImage {
 	}
 }
 
-// functions for companding
+//----====----====----====----====----====----====
+// ZCarouselCompander: collection of DSP functions for companding
 ZCarouselCompander {
 
 	// compute compander input envelope using windowed average power
@@ -286,7 +517,9 @@ ZCarouselCompander {
 		^gainDb
 	}
 
-	// TODO: soft knee option
+	//----====----====----====----
+	//---- TODO: soft knee option!
+	//----====----====----====----
 
 	// put companding functions together
 	*compandStereo {
