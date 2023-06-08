@@ -133,7 +133,13 @@ ZCarouselParadox {
 			arg num, vel;
 			midiController.noteOff(num);
 		});
-		//		midiInput.cc();
+
+		// sustain pedal
+		midiInput.cc(63, {
+			arg val;
+		});
+
+		// mute pedal
 	}
 }
 
@@ -143,7 +149,7 @@ ZCarouselParadox {
 ZCarouselParadox_Processor  {
 
 	// make the buffer long enough to act as a decent looper
-	classvar bufferLength = 32.0;
+	classvar bufferLength = 8.0;
 
 	var <context; // a `ZCarouselParadox`
 	var <server;
@@ -151,6 +157,20 @@ ZCarouselParadox_Processor  {
 	var <synth;
 	var <bus;
 	var <patch;
+	var <echoTime;
+
+	// `intervalMode` allowed values:
+	// \symmetricPitchUp
+	//  - always pitch up by the interval amount, whether extending or contracting
+	//
+	// \symmetricPitchUpDown
+	//  - negative interal will be applied in reverse
+	//
+	// \signedPitchUp
+	//  - always pitch up, for contracting/extending depending on interval sign
+	//
+	// \signedPitchUpDown
+	//  - negative interval lowers for extending only, positive interval rases for contracting only
 	var <intervalMode;
 
 	// user-settable function taking a note interval and returning a frequency ratio
@@ -187,9 +207,12 @@ ZCarouselParadox_Processor  {
 			// - when write head is *not disabled*, the loop still applies;
 			//   making it shorter than the delay time will cause Weird things to happen
 			var loopFrames = \loopTime.kr * SampleRate.ir;
-			var phaseWr = (Phasor.ar(rate:1, end: bufFrames)).wrap(0, loopFrames-1);
 			var phaseOffset = (delayTime * SampleRate.ir).min(bufFrames-1);
-			var phaseRd = (phaseWr + bufFrames - phaseOffset).wrap(0, loopFrames-1);
+
+			var phaseWr = (Phasor.ar(rate:1, end: bufFrames)).wrap(0, loopFrames-1);
+			var phaseRd = (phaseWr - phaseOffset).wrap(0, loopFrames-1);
+
+
 			var previous = BufRd.ar(2, buffer, phaseWr);
 			var output = BufRd.ar(2, buffer, phaseRd);
 
@@ -267,11 +290,14 @@ ZCarouselParadox_Processor  {
 			\outGain, bus[\comp_gain],
 		], context.group[\process]);
 
+		echoTime = 1.0;
+
 		tuningFunction = { arg interval;
 			interval.midiratio
 		};
 
-		intervalMode = \symmetric;
+		intervalMode = \symmetricPitchUpDown;
+
 	}
 
 	setNoteInterval { arg interval;
@@ -279,19 +305,34 @@ ZCarouselParadox_Processor  {
 		if (interval == 0, {
 			// do nothing
 		}, {
-			if (intervalMode == \symmetric, {
-				// in "symmetric" mode, both negative and positive intervals affect both slew directions
-				var ratio = tuningFunction.value(interval.abs);
-				postln("symmetric ratio = " ++ ratio);
-				synth.set(\delayTimeSlewUp, ratio + 1);
-				synth.set(\delayTimeSlewDown, ratio - 1);
-			}, {
-				// otherwise, negative interval sets negative slew, and positive interval likewise
-				if (interval > 0, {
-					synth.set(\delayTimeSlewDown, tuningFunction.value(interval) - 1);
-				}, {
-					synth.set(\delayTimeSlewUp, tuningFunction.value(interval.neg) + 1);
-				});
+			switch(intervalMode,
+				{\symmetricPitchUp}, {
+					var ratio = tuningFunction.value(interval.abs);
+					postln("symmetric upward ratio = " ++ ratio);
+					synth.set(\delayTimeSlewUp, ratio + 1);
+					synth.set(\delayTimeSlewDown, ratio - 1);
+				},
+				{\symmetricPitchUpDown}, {
+					var ratio = tuningFunction.value(interval);
+
+					postln("symmetric bipolar ratio = " ++ ratio);
+					if (ratio > 1, {
+						postln("raising");
+						synth.set(\delayTimeSlewUp, ratio + 1);
+						synth.set(\delayTimeSlewDown, ratio - 1);
+					}, {
+						postln("lowering");
+						synth.set(\delayTimeSlewUp, ratio + 1);
+						// unfortunately
+						synth.set(\delayTimeSlewDown, ratio);
+					});
+				},
+				{\signedPitchUp}, {
+					if (interval > 0, {
+						synth.set(\delayTimeSlewDown, tuningFunction.value(interval) - 1);
+					}, {
+						synth.set(\delayTimeSlewUp, tuningFunction.value(interval.neg) + 1);
+					});
 			});
 		});
 
@@ -301,6 +342,7 @@ ZCarouselParadox_Processor  {
 	}
 
 	setEchoTime { arg time;
+		echoTime = time.min(bufferLength - 0.001);
 		synth.set(\delayTime, time);
 	}
 }
@@ -413,6 +455,8 @@ ZCarouselParadox_MidiController {
 	// - with the sustain pedal engaged, playing any single note will set the interval according to the last stored base note.
 	noteOn { arg num;
 
+		numHeldNotes.postln;
+
 		// i think it would be nice, while sustaining and not muting, to allow tapping tempo with a single note
 		if (pedalState[\sustain], {
 			this.setNoteInterval(lastBaseNote, num);
@@ -429,7 +473,7 @@ ZCarouselParadox_MidiController {
 				postln("not sustaining, first note");
 				lastBaseNote = num;
 				if (pedalState[\mute].not, {
-				postln("not muted, setting tap start");
+					postln("not muted, setting tap start");
 					tapStartTime = SystemClock.seconds;
 				});
 			}, {
@@ -457,6 +501,10 @@ ZCarouselParadox_MidiController {
 	setTimeDelta { arg delta;
 		postln("set time delta: " ++ delta);
 		processor.setEchoTime(delta);
+	}
+
+	clearHeldNotes {
+		numHeldNotes = 0;
 	}
 }
 
