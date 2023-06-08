@@ -20,6 +20,7 @@ s.waitForBoot { Routine {
 		~ratios[interval % 12] * (2 ** (interval / 12).floor)
 	};
 
+	// feed back
 	z.processor.synth.set(\feedbackLevel, -4.dbamp);
 	// ping pong
 	z.processor.synth.set(\stereoFlip, 1);
@@ -41,12 +42,13 @@ s.waitForBoot { Routine {
 	// looks like this:
 	// Array.series(128).collect({ arg x; ~level_taper.value(x) }).plot;
 
-
 	// let's have a little UI
 	~ui_state = Dictionary.new;
 	~ui_state[\freeze] = 0;
 	~ui_state[\time] = z.processor.echoTime;
 
+		~ui_state[\hpf] = 0;
+		~ui_state[\lpf] = 0;
 	{
 		w = Window("z-carousel-paradox", Rect(100, 200, 400, 300), false);
 		u = UserView(w, Rect(0, 0, w.bounds.width, w.bounds.height));
@@ -107,7 +109,24 @@ s.waitForBoot { Routine {
 					})
 				);
 				~ui_state[\time] = value;
-		});
+			},
+			{\distortAmount}, {
+				z.setSynthParam(\distortAmount, value.linlin(0, 127, 0, 1));
+				~ui_state[\distortAmount] = value;
+			},
+			{\distortShape}, {
+				z.setSynthParam(\distortShape, value.linlin(0, 127, 0, 2));
+				~ui_state[\distortShape] = value;
+			},
+			{\hpf}, {
+				~ui_state[\hpf] = value.min(~ui_state[\lpf]-1);
+				z.setSynthParam(\hpf, ~ui_state[\hpf].midicps);
+			},
+			{\lpf}, {
+				~ui_state[\lpf] = value.max(~ui_state[\hpf]+1);
+				z.setSynthParam(\lpf, ~ui_state[\lpf].midicps);
+			}
+		);
 		{ u.refresh; }.defer;
 	};
 
@@ -116,7 +135,7 @@ s.waitForBoot { Routine {
 	// these 8 CCs happen to be how i have my controller knobs set up...
 
 	// uncoment to inspect all incoming MIDI:
-	// z.midiInput.verbose = true;
+	z.midiInput.verbose = true;
 
 	z.midiInput.cc(2, { arg value;
 		~ui_set_midi.value(\feedback, value);
@@ -135,19 +154,19 @@ s.waitForBoot { Routine {
 	});
 
 	z.midiInput.cc(12, { arg value;
-		//...
+		~ui_set_midi.value(\distortAmount, value);
 	});
 
 	z.midiInput.cc(13, { arg value;
-		//...
+		~ui_set_midi.value(\distortShape, value);
 	});
 
 	z.midiInput.cc(71, { arg value;
-		//...
+		~ui_set_midi.value(\hpf, value);
 	});
 
 	z.midiInput.cc(74, { arg value;
-		//...
+		~ui_set_midi.value(\lpf, value);
 	});
 
 	// ... and these 8 are my pads

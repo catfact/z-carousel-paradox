@@ -219,24 +219,39 @@ ZCarouselParadox_Processor  {
 			var phaseWr = (Phasor.ar(rate:1, end: bufFrames)).wrap(0, loopFrames-1);
 			var phaseRd = (phaseWr - phaseOffset).wrap(0, loopFrames-1);
 
-
 			var previous = BufRd.ar(2, buffer, phaseWr);
 			var output = BufRd.ar(2, buffer, phaseRd);
 
 			// "freeze" interpolation signal
 			var freeze = Lag.ar(K2A.ar(\freeze.kr(0)), \freezeLag.kr(0.2));
-			//var freeze = 0;
 
-			var feedback = output *  \feedbackLevel.kr(0);
+			var input, feedback, outputDist;
 
+			outputDist = Array.fill(2, { arg i;
+				SelectX.ar(\distortShape.kr(0), [
+					output[i].softclip,
+					output[i].distort,
+					sin(output[i]*1.5)*0.75
+				])
+			});
+
+			output = Array.fill(2, { arg i;
+				SelectX.ar(\distortAmount.kr(0), [
+					output[i], outputDist[i]
+			])
+			});
+
+			// highpass and lowpass filtering
+			output = LPF.ar(HPF.ar(output, \hpf.kr(20)), \lpf.kr(18000));
+
+			feedback = output *  \feedbackLevel.kr(0);
 			// sum input with feedback
-			var input = In.ar(\in.kr, 2) + feedback;
+			input = In.ar(\in.kr, 2) + feedback;
+
 
 			// further processing applies to both the first-pass input and the feedback
 			// exercise: play with the routing of these processing steps
 
-			// highpass and lowpass filtering
-			input = LPF.ar(HPF.ar(input, \feedbackHpf.kr(20)), \feedbackLpf.kr(18000));
 
 			// stereo image processing
 			input = ZCarouselParadox_StereoImage.midSideFlip(input,
@@ -308,14 +323,14 @@ ZCarouselParadox_Processor  {
 	}
 
 	setNoteInterval { arg interval;
-		postln("set interval: " ++ interval);
+		// postln("set interval: " ++ interval);
 		if (interval == 0, {
 			// do nothing
 		}, {
 			switch(intervalMode,
 				{\symmetricPitchUp}, {
 					var ratio = tuningFunction.value(interval.abs);
-					postln("symmetric upward ratio = " ++ ratio);
+					// postln("symmetric upward ratio = " ++ ratio);
 					synth.set(\delayTimeSlewUp, ratio + 1);
 					synth.set(\delayTimeSlewDown, ratio - 1);
 				},
@@ -324,11 +339,11 @@ ZCarouselParadox_Processor  {
 
 					postln("symmetric bipolar ratio = " ++ ratio);
 					if (ratio > 1, {
-						postln("raising");
+						// postln("raising");
 						synth.set(\delayTimeSlewUp, ratio + 1);
 						synth.set(\delayTimeSlewDown, ratio - 1);
 					}, {
-						postln("lowering");
+						// postln("lowering");
 						synth.set(\delayTimeSlewUp, ratio + 1);
 						// unfortunately
 						synth.set(\delayTimeSlewDown, ratio);
