@@ -123,7 +123,7 @@ ZCarouselParadox {
 		// (probably better/ more flexible in fact)
 		// but here i'm including it to keep things more self-contained
 		midiInput = ZCarouselParadox_MidiInput.new(nil, nil, true);
-		midiInput.verbose = true;
+
 		midiInput.noteon ({
 			arg num, vel;
 			midiController.noteOn(num);
@@ -135,11 +135,18 @@ ZCarouselParadox {
 		});
 
 		// sustain pedal
-		midiInput.cc(63, {
+		midiInput.cc(64, {
 			arg val;
 		});
 
 		// mute pedal
+		midiInput.cc(67, {
+			arg val;
+		});
+	}
+
+	setSynthParam { arg key, value;
+		this.processor.synth.set(key, value);
 	}
 }
 
@@ -149,7 +156,7 @@ ZCarouselParadox {
 ZCarouselParadox_Processor  {
 
 	// make the buffer long enough to act as a decent looper
-	classvar bufferLength = 8.0;
+	classvar bufferLength = 32.0;
 
 	var <context; // a `ZCarouselParadox`
 	var <server;
@@ -428,6 +435,7 @@ ZCarouselParadox_MidiController {
 	var <tapStartTime;
 	var <lastBaseNote;
 	var <numHeldNotes;
+	var <timeDelta;
 
 
 	*new { arg processor;
@@ -492,6 +500,8 @@ ZCarouselParadox_MidiController {
 
 	noteOff { arg num;
 		numHeldNotes = numHeldNotes - 1;
+		// if the count goes negative its probably (e.g.) a missed noteon from startup
+		numHeldNotes = numHeldNotes.max(0);
 	}
 
 	setNoteInterval { arg baseNote, newNote;
@@ -500,6 +510,7 @@ ZCarouselParadox_MidiController {
 
 	setTimeDelta { arg delta;
 		postln("set time delta: " ++ delta);
+		timeDelta = delta;
 		processor.setEchoTime(delta);
 	}
 
