@@ -27,6 +27,8 @@ s.waitForBoot { Routine {
 	// engage the expander
 	z.processor.synth.set(\thresholdExpand, -42);
 	z.processor.synth.set(\slopeBelow, 16);
+	z.processor.synth.set(\thresholdCompress, -12);
+	z.processor.synth.set(\slopeAbove, 1.0);
 	z.processor.synth.set(\compGainAttack, 4);
 	z.processor.synth.set(\compGainRelease, 1);
 
@@ -44,11 +46,12 @@ s.waitForBoot { Routine {
 
 	// let's have a little UI
 	~ui_state = Dictionary.new;
+	// following params have stateful interactions, and must be initialized
 	~ui_state[\freeze] = 0;
 	~ui_state[\time] = z.processor.echoTime;
+	~ui_state[\hpf] = 0;
+	~ui_state[\lpf] = 0;
 
-		~ui_state[\hpf] = 0;
-		~ui_state[\lpf] = 0;
 	{
 		w = Window("z-carousel-paradox", Rect(100, 200, 400, 300), false);
 		u = UserView(w, Rect(0, 0, w.bounds.width, w.bounds.height));
@@ -175,25 +178,24 @@ s.waitForBoot { Routine {
 	});
 
 	z.midiInput.cc(17, { arg value;
-
 	});
+
 	z.midiInput.cc(18, { arg value;
-
 	});
+
 	z.midiInput.cc(19, { arg value;
-
 	});
+
 	z.midiInput.cc(20, { arg value;
-
 	});
+
 	z.midiInput.cc(21, { arg value;
-
 	});
+
 	z.midiInput.cc(22, { arg value;
-
 	});
-	z.midiInput.cc(23, { arg value;
 
+	z.midiInput.cc(23, { arg value;
 	});
 
 
