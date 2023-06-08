@@ -32,7 +32,7 @@ ZCarouselParadox {
 	*sendSynthDefs { arg server;
 
 		// main processor synthdefs
-		ZCarouselProcessor.sendSynthDefs(server);
+		ZCarouselParadox_Processor.sendSynthDefs(server);
 
 		// utility synthdefs
 		SynthDef.new(\patch_mono,{
@@ -116,30 +116,31 @@ ZCarouselParadox {
 
 		//-----------------------------------
 		//--- specific stuff
-		processor = ZCarouselProcessor.new(this);
-		midiController = ZCarouselMidiController.new(processor);
+		processor = ZCarouselParadox_Processor.new(this);
+		midiController = ZCarouselParadox_MidiController.new(processor);
 
 		// NB: the generic MIDI input wrapper could just as well be left outside this class
 		// (probably better/ more flexible in fact)
 		// but here i'm including it to keep things more self-contained
-		midiInput = ZCarouselMidiInput.new(nil, nil, true);
+		midiInput = ZCarouselParadox_MidiInput.new(nil, nil, true);
 		midiInput.verbose = true;
-		midiInput.noteon({
+		midiInput.noteon ({
 			arg num, vel;
 			midiController.noteOn(num);
 		});
-		midiInput.noteoff({
+
+		midiInput.noteoff ({
 			arg num, vel;
 			midiController.noteOff(num);
 		});
-//		midiInput.cc();
+		//		midiInput.cc();
 	}
 }
 
 //------------------------------------------------------------
 // ZCarouselProcessor: top-level effect module
 // defines the single large synthdef used for echo + companding
-ZCarouselProcessor  {
+ZCarouselParadox_Processor  {
 
 	// make the buffer long enough to act as a decent looper
 	classvar bufferLength = 32.0;
@@ -162,7 +163,7 @@ ZCarouselProcessor  {
 			var buffer = \buffer.kr;
 			var bufFrames = BufFrames.kr(buffer);
 			var delayTime = Lag.ar(Slew.ar(K2A.ar(\delayTime.kr(1)),
-				\delayTimeSlewUp.kr(1), \delayTimeSlewDown.kr(1)), \delayTimeLag.kr(1));
+				\delayTimeSlewUp.kr(1), \delayTimeSlewDown.kr(1)), \delayTimeLag.kr(0.08));
 
 			// refinement: adding a `freeze` control
 			// we can implement "freeze" by interpolating between input and previous buffer contents,
@@ -208,11 +209,11 @@ ZCarouselProcessor  {
 			input = LPF.ar(HPF.ar(input, \feedbackHpf.kr(20)), \feedbackLpf.kr(18000));
 
 			// stereo image processing
-			input = ZCarouselStereoImage.midSideFlip(input,
+			input = ZCarouselParadox_StereoImage.midSideFlip(input,
 				\stereoMidGain.kr(1), \stereoSideGain.kr(1), \stereoBias.kr(0), \stereoFlip.kr(0));
 
 			// companding
-			input = ZCarouselCompander.compandStereo(input,
+			input = ZCarouselParadox_Compander.compandStereo(input,
 				// control rate output busses for envelope and gain:
 				\outEnv.kr, \outGain.kr,
 				// compander parameters:
@@ -249,25 +250,39 @@ ZCarouselProcessor  {
 		// NB: assumes that this is constructed in a Thread/Routine!
 		server = context.server;
 		buffer = Buffer.alloc(server, server.sampleRate * bufferLength, 2);
+		bus = Dictionary.newFrom([
+			\comp_env, Bus.control(server, 1),
+			\comp_gain, Bus.control(server, 1),
+		]);
+
 		server.sync;
+
 		synth = Synth.new(\ZCarouselProcessor, [
 			\buffer, buffer,
-			\in, context.group[\hw_in],
-			\out, context.group[\hw_out],
+			\loopTime, buffer.duration,
+			// NB: here's one place to change for different bus structure
+			\in, context.bus[\hw_in],
+			\out, context.bus[\hw_out],
+			\outEnv, bus[\comp_env],
+			\outGain, bus[\comp_gain],
 		], context.group[\process]);
 
 		tuningFunction = { arg interval;
 			interval.midiratio
 		};
+
+		intervalMode = \symmetric;
 	}
 
 	setNoteInterval { arg interval;
+		postln("set interval: " ++ interval);
 		if (interval == 0, {
 			// do nothing
 		}, {
 			if (intervalMode == \symmetric, {
 				// in "symmetric" mode, both negative and positive intervals affect both slew directions
 				var ratio = tuningFunction.value(interval.abs);
+				postln("symmetric ratio = " ++ ratio);
 				synth.set(\delayTimeSlewUp, ratio + 1);
 				synth.set(\delayTimeSlewDown, ratio - 1);
 			}, {
@@ -293,7 +308,7 @@ ZCarouselProcessor  {
 //------------------------------------------------------------
 // ZCarouselMidiInput: MIDI I/O glue class
 // (same as `ZSimpleMidiControl` from prototyping environment)
-ZCarouselMidiInput {
+ZCarouselParadox_MidiInput {
 	var <port, <dev;
 	var <ccFunc; // array of functions
 	var <noteOnFunc;
@@ -311,6 +326,7 @@ ZCarouselMidiInput {
 		MIDIClient.init;
 
 		if (connectAll, {
+			postln("connect all MIDI");
 			MIDIIn.connectAll;
 		}, {
 			var endpoint = MIDIIn.findPort(deviceName, portName);
@@ -363,7 +379,7 @@ ZCarouselMidiInput {
 //---------------------------------------------------------------------------------------
 // ZCarouselMidiController: class implementing MIDI control logic for a single processsor
 
-ZCarouselMidiController {
+ZCarouselParadox_MidiController {
 	// specific logic
 	var <processor;
 	var <pedalState;
@@ -385,6 +401,7 @@ ZCarouselMidiController {
 		numHeldNotes = 0;
 	}
 
+
 	// the central control gesture of the instrument uses a MIDI keyboard (or equivalent.)
 	//
 	// playing an interval on the keyboard simultaneously sets:
@@ -398,30 +415,32 @@ ZCarouselMidiController {
 
 		// i think it would be nice, while sustaining and not muting, to allow tapping tempo with a single note
 		if (pedalState[\sustain], {
-			setNoteInterval(lastBaseNote, num);
+			this.setNoteInterval(lastBaseNote, num);
 			if (pedalState[\mute].not, {
 				var now = SystemClock.seconds;
 				if (tapStartTime.notNil, {
-					setTimeDelta(now - tapStartTime);
+					this.setTimeDelta(now - tapStartTime);
 				});
 				tapStartTime = now;
 			});
 		}, {
 			// not sustaining, so what we do depends on held notes count
 			if (numHeldNotes < 1, {
+				postln("not sustaining, first note");
 				lastBaseNote = num;
 				if (pedalState[\mute].not, {
+				postln("not muted, setting tap start");
 					tapStartTime = SystemClock.seconds;
 				});
 			}, {
+				// set the interval
+				this.setNoteInterval(lastBaseNote, num);
 				if (pedalState[\mute].not, {
 					// not muted, so set the tap tempo
 					if (tapStartTime.notNil, {
-						setTimeDelta(SystemClock.seconds - tapStartTime);
+						this.setTimeDelta(SystemClock.seconds - tapStartTime);
 					});
 				});
-				// set the interval
-				setNoteInterval(lastBaseNote, num);
 			});
 		});
 		numHeldNotes = numHeldNotes + 1;
@@ -436,6 +455,7 @@ ZCarouselMidiController {
 	}
 
 	setTimeDelta { arg delta;
+		postln("set time delta: " ++ delta);
 		processor.setEchoTime(delta);
 	}
 }
@@ -447,7 +467,7 @@ ZCarouselMidiController {
 
 //---------------------------------------------------------------------
 // ZCarouselStereoImage: collection of DSP functions for stereo imaging
-ZCarouselStereoImage {
+ZCarouselParadox_StereoImage {
 	classvar scale = 0.7071067811865475; // == 1 / sqrt(2)
 
 	*midSideFlip {
@@ -476,7 +496,7 @@ ZCarouselStereoImage {
 
 //----====----====----====----====----====----====
 // ZCarouselCompander: collection of DSP functions for companding
-ZCarouselCompander {
+ZCarouselParadox_Compander {
 
 	// compute compander input envelope using windowed average power
 	*compEnvRms {
@@ -537,13 +557,13 @@ ZCarouselCompander {
 		gainAttack=0.01, gainRelease=0.02;
 
 		var inputEnvelope = max(
-			ZCarouselCompander.compEnvPeakDecay(input[0], envAttack, envRelease),
-			ZCarouselCompander.compEnvPeakDecay(input[1], envAttack, envRelease),
+			ZCarouselParadox_Compander.compEnvPeakDecay(input[0], envAttack, envRelease),
+			ZCarouselParadox_Compander.compEnvPeakDecay(input[1], envAttack, envRelease),
 		);
-		var gainCompress = ZCarouselCompander.compGainHardKnee(inputEnvelope,
+		var gainCompress = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
 			thresholdCompress, slopeAbove, 1,
 			gainAttack, gainRelease);
-		var gainExpand = ZCarouselCompander.compGainHardKnee(inputEnvelope,
+		var gainExpand = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
 			thresholdCompress, 1, slopeBelow,
 			gainAttack, gainRelease);
 		var totalGain = gainCompress * gainExpand;
