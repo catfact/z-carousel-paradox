@@ -20,9 +20,8 @@ in the workshop, we quickly mapped held MIDI note intervals to the pitch constra
 - the first note pressed in a chord sets the start of a tempo tap. this is the _base note_.
 - each time an additional note is pressed, it sets the delay time, computed as the **time delta between the base note and the current note**.
 - pressing a non-base note also sets the _delay slew ratio_ for contracting (negative slope) and/or expanding (positive slope). there are several modes for this:
-  - `symmetricUpDown`: 
-    `\symmetricPitchUp`: always pitch up by the interval amount, whether extending or contracting (reversed when extending)
-  - `\symmetricPitchUpDown`: pitch **down** (reversed) for extending, up for contracting
+  - `\symmetricPitchUp`: always pitch up by the interval amount, whether extending or contracting (reversed when extending)
+  - `\symmetricPitchUpDown` (default): pitch up for contracting; pitch down or up for extending depending on the sign of the interval
   - `\signedPitchUp`: always pitch up, but apply to extending/contracting depending on interval sign
 
 additionally, MIDI sustain and mute pedals apply other modes:
