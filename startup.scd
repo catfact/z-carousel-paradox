@@ -27,26 +27,34 @@ s.waitForBoot { Routine {
 	// engage the expander
 	z.processor.synth.set(\thresholdExpand, -42);
 	z.processor.synth.set(\slopeBelow, 16);
-	z.processor.synth.set(\thresholdCompress, -12);
-	z.processor.synth.set(\slopeAbove, 1.0);
-	z.processor.synth.set(\compGainAttack, 4);
-	z.processor.synth.set(\compGainRelease, 1);
+	// really slow "attack"
+	z.processor.synth.set(\gainDownLagExpand, 1);
+	// extremely slow "release"
+	z.processor.synth.set(\gainUpLagExpand, 4);
 
 	// let's have a little level fader
 	~level_taper_break = -36.dbamp;
+	// 127 - (36*2) -> 55
+
+	~level_taper_log = {arg midi; ((midi-127)/4).dbamp };
+	~level_taper_break_midi = 24;
+	~level_taper_break_value = ~level_taper_log.value(~level_taper_break_midi);
 	~level_taper = { arg midi;
-		if (midi < 55, {
-			(midi / 54.0) * ~level_taper_break;
+		if (midi < ~level_taper_break_midi, {
+			midi.linlin(0, ~level_taper_break_midi, 0, ~level_taper_break_value)
 		}, {
-			((midi-127)*0.5).dbamp
-		});
+			~level_taper_log.value(midi);
+		})
 	};
 	// looks like this:
-	// Array.series(128).collect({ arg x; ~level_taper.value(x) }).plot;
+	/*
+	Array.series(128).collect({ arg x; ~level_taper.value(x) }).plot;
+	Array.series(128).collect({ arg x; ~level_taper.value(x).ampdb.max(-100) }).plot;
+	*/
 
 	// let's have a little UI
 	~ui_state = Dictionary.new;
-	// following params have stateful interactions, and must be initialized
+	// following params have stateful in
 	~ui_state[\freeze] = 0;
 	~ui_state[\time] = z.processor.echoTime;
 	~ui_state[\hpf] = 0;
@@ -72,6 +80,7 @@ s.waitForBoot { Routine {
 		w.front;
 	}.defer;
 
+	// all MIDI updates go through this to keep UI display in sync
 	~ui_set_midi = { arg key, value;
 		switch(key,
 			{\feedback}, {

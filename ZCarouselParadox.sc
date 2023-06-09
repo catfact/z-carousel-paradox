@@ -265,7 +265,9 @@ ZCarouselParadox_Processor  {
 				// input envelope smoothing:
 				\compEnvAttack.kr(0.01), \compEnvRelease.kr(0.1),
 				// output gain smoothing:
-				\compGainAttack.kr(0.01), \compGainRelease.kr(0.1));
+				\gainUpLagCompress.kr(0.01), \gainDownLagCompress.kr(0.1),
+				\gainUpLagExpand.kr(0.01), \gainDownLagExpand.kr(0.1)
+			);
 
 			// mix with previous buffer contents
 			input = [
@@ -592,7 +594,6 @@ ZCarouselParadox_Compander {
 		// expensive, but only happens once (.ir)
 		var decay = (-90.dbamp) ** (1/(decayTime*SampleRate.ir));
 		var envelope = PeakFollower.ar(input, decay);
-		//decay.poll;
 		envelope = LagUD.ar(envelope, attack, release);
 		^envelope;
 	}
@@ -605,7 +606,7 @@ ZCarouselParadox_Compander {
 		var deltaDb = envDb - threshDb;
 		var newTargetDb = threshDb + (deltaDb * if(envDb > threshDb, slopeAbove, slopeBelow));
 		var gainDb = newTargetDb - envDb;
-		//envDb.poll;
+		// try: apply gain smoothing in different domains besides linear amplitude
 		gainDb = LagUD.ar(gainDb.dbamp, release, attack);
 		^gainDb
 	}
@@ -626,19 +627,29 @@ ZCarouselParadox_Compander {
 		thresholdCompress = -12,
 		thresholdExpand = -36,
 		slopeAbove, slopeBelow,
-		envAttack=0.01, envRelease=0.1,
-		gainAttack=0.01, gainRelease=0.02;
+		// i totally confused myself with "attack" and "release" while making this.
+		// "attack" would traditionally mean when gain is *decreasing*,
+		// but input amplitude is *increasing*,
+		// and vice versa for "release."
+		// let's use a consistent and more low-level terminology here:
+		// the rising or falling integration time constants.
+		envUpLag=0.002, envDownLag=0.01,
+		// effectively we are cascading two amplitude smoothers for envelope and
+		gainUpLagCompress=0.008, gainDownLagCompress=0.05,
+		gainUpLagExpand=0.5, gainDownLagExpand=0.1;
 
 		var inputEnvelope = max(
-			ZCarouselParadox_Compander.compEnvPeakDecay(input[0], envAttack, envRelease),
-			ZCarouselParadox_Compander.compEnvPeakDecay(input[1], envAttack, envRelease),
+			ZCarouselParadox_Compander.compEnvPeakDecay(input[0], envUpLag, envDownLag),
+			ZCarouselParadox_Compander.compEnvPeakDecay(input[1], envUpLag, envDownLag),
 		);
 		var gainCompress = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
 			thresholdCompress, slopeAbove, 1,
-			gainAttack, gainRelease);
+			gainUpLagCompress, gainDownLagCompress);
+
 		var gainExpand = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
-			thresholdCompress, 1, slopeBelow,
-			gainAttack, gainRelease);
+			thresholdExpand, 1, slopeBelow,
+			gainUpLagExpand, gainDownLagExpand);
+
 		var totalGain = gainCompress * gainExpand;
 
 		Out.kr(outEnv, A2K.kr(inputEnvelope));
