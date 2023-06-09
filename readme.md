@@ -54,6 +54,8 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 ## caveats / TODO
 
+- after playing with it some, i think the compander really needs separate gain envelope settings for compress and expand
+
 - there are quite possibly bugs in the control mechanism and pedal handling, i've mostly played without the pedals (and maybe the design can be made more useful there)
 
 - the looping mechanism is sort of a half-baked experiment. it would be more effective to simply put a dedicated looping module in series after the effect... or possibly to set feedback gain to unity and bypass all other live input and feedback processing. (the problem there is that delay modulation artifacts will still be written to the buffer... hm.)
@@ -64,8 +66,6 @@ there are no big reasons for any of this except that it's a little simplified, a
   - compander envelope and gain (already on a control bus, need to draw it)
   - current state of smoothed / slewed delay time
 
-- build out the other UI a tiny bit more. (e.g. i'd like to see final parameter values in real units, in addition to MIDI input values)
+- build out the other UI a tiny bit more. (e.g. i'd like to see final parameter values in real units, in addition to MIDI input values.)
 
 - maybe some state / preset management besides hardcoding things in the startup script
-
-
