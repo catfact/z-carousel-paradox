@@ -50,11 +50,9 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 - added a delay time control that is accumulative in the log(2) domain. effectively this means the tapped tempo acts as a "base time" and the "time knob" changes it in fractions of a golden ratio.
 
-- added separate compress / expand thresholds
+- added separate compress / expand thresholds and gain smoothing
 
 ## caveats / TODO
-
-- after playing with it some, i think the compander really needs separate gain envelope settings for compress and expand
 
 - there are quite possibly bugs in the control mechanism and pedal handling, i've mostly played without the pedals (and maybe the design can be made more useful there)
 
