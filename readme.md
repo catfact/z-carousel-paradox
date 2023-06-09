@@ -60,7 +60,7 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 - the looping mechanism is sort of a half-baked experiment. it would be more effective to simply put a dedicated looping module in series after the effect... or possibly to set feedback gain to unity and bypass all other live input and feedback processing. (the problem there is that delay modulation artifacts will still be written to the buffer... hm.)
 
-- i have noticed some minor but still irritating clicks and pops. i think these are again related to the phase wrapping logic.
+- i have noticed some minor but still irritating clicks and pops. i think these are again related to the phase wrapping logic called for by the "freeze" mechanism. 
 
 - i would like to add some more realtime visualizations of the processor state, particularly:
   - compander envelope and gain (already on a control bus, need to draw it)
