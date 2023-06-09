@@ -50,7 +50,7 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 - added a delay time control that is accumulative in the log(2) domain. effectively this means the tapped tempo acts as a "base time" and the "time knob" changes it in fractions of a golden ratio.
 
-- added separate compress / expand ratios
+- added separate compress / expand thresholds
 
 ## caveats / TODO
 
