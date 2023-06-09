@@ -8,9 +8,9 @@ in essence, the effect is very simple: a stereo delay line with feedback. the ma
 
 the delay time is smoothed twice: once with a nonlinear integrator, and once with slew rate limiting. the slew rate effectively allows deliberately pitched artifacts to emerge. these pitch ratios can be set separately for lengthening and shortening the delay time.
 
-when delay times are short, this feels and sounds a bit like a normal BBD style delay with additional constraints on pitch. however, this delay line is also very long - 32s as written, but this is basically arbitrary and limited only by RAM. when moving between a very short and a very long delay, with pitch restraints, that gesture can take a long time to complete! for example when pitch changes are constrained to an octave, moving between 1 and 10 seconds of delay takes 4.5 seconds of real time. in the interim, various stored audio material is passed over by the read head.
+when delay times are short, this feels and sounds a bit like a normal BBD style delay with additional constraints on pitch. however, this delay line is also very long - 32s as written, but this is basically arbitrary and limited only by RAM. when moving between a very short and a very long delay, with pitch restraints, that gesture can take a long time to complete! for example: with pitch artifacts constrained to an octave, contracting from 10 seconds to 1 seconds of delay takes 9 seconds of real time! in the interim, various stored audio material is passed over by the read head, pitched 1 octave up. (timing is additionally distorted by the relatively slight amount of nonlinear integrator-style smoothing.)
 
-i am calling this thing _Carousel Paradox_, for no particularly great reason. 
+i am calling this thing _Carousel Paradox_, for no particularly great reason.
 
 
 ## control scheme
