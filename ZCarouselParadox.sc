@@ -175,9 +175,7 @@ ZCarouselParadox_Processor  {
 	//
 	// \signedPitchUp
 	//  - always pitch up, for contracting/extending depending on interval sign
-	//
-	// \signedPitchUpDown
-	//  - negative interval lowers for extending only, positive interval rases for contracting only
+
 	var <intervalMode;
 
 	// user-settable function taking a note interval and returning a frequency ratio
@@ -480,7 +478,8 @@ ZCarouselParadox_MidiController {
 
 		numHeldNotes.postln;
 
-		// i think it would be nice, while sustaining and not muting, to allow tapping tempo with a single note
+		// i think it would be nice, while sustaining and not muting,
+		// to allow tapping tempo with a single note
 		if (pedalState[\sustain], {
 			this.setNoteInterval(lastBaseNote, num);
 			if (pedalState[\mute].not, {
