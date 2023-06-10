@@ -7,6 +7,10 @@ s.waitForBoot { Routine {
 
 	s.sync; // <- important
 
+	// removed the `loopTime` synth parameter since it always caused a click as implemented
+	// instead, made this classvar writable; it will be used as the buffer length for new processors
+	ZCarouselParadox_Processor.bufferLength = 24.0;
+
 	z = ZCarouselParadox.new(s, 2);
 
 	{
@@ -127,7 +131,7 @@ s.waitForBoot { Routine {
 				~ui_state[\distortAmount] = value;
 			},
 			{\distortShape}, {
-				z.setSynthParam(\distortShape, value.linlin(0, 127, 0, 2));
+				z.setSynthParam(\distortShape, value.linlin(0, 127, 0, 3));
 				~ui_state[\distortShape] = value;
 			},
 			{\hpf}, {

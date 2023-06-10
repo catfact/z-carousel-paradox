@@ -154,9 +154,7 @@ ZCarouselParadox {
 // ZCarouselProcessor: top-level effect module
 // defines the single large synthdef used for echo + companding
 ZCarouselParadox_Processor  {
-
-	// make the buffer long enough to act as a decent looper
-	classvar bufferLength = 32.0;
+	classvar <>bufferLength = 32.0;
 
 	var <context; // a `ZCarouselParadox`
 	var <server;
@@ -188,7 +186,7 @@ ZCarouselParadox_Processor  {
 			var buffer = \buffer.kr;
 			var bufFrames = BufFrames.kr(buffer);
 			var delayTime = Lag.ar(Slew.ar(K2A.ar(\delayTime.kr(1)),
-				\delayTimeSlewUp.kr(1), \delayTimeSlewDown.kr(1)), \delayTimeLag.kr(0.08));
+				\delayTimeSlewUp.kr(1), \delayTimeSlewDown.kr(1)), \delayTimeLag.kr(0.02));
 
 			// refinement: adding a `freeze` control
 			// we can implement "freeze" by interpolating between input and previous buffer contents,
@@ -200,22 +198,12 @@ ZCarouselParadox_Processor  {
 			//
 			// additionally: when we disable the write head, we'll hear buffer contents on a loop,
 			// and this loop length is separate from the delay time!
-			// (naively, the loop length is equal to the entire buffer length)
-			//
-			// so we'll add an additional `loopTime` parameter,
-			// and wrap both Rd and Wr phases to the corresponding frame count.
-			// this comes with caveats:
-			// - modulating loop time will cause clicks!
-			//   (sorry, a clickless, modulateable looper needs special attention)
-			// - i couldn't figure out a way to initialize loop time control to the buffer duration,
-			//   so it needs to be set explicitly at synhth creation if that is desired.
-			// - when write head is *not disabled*, the loop still applies;
-			//   making it shorter than the delay time will cause Weird things to happen
-			var loopFrames = \loopTime.kr * SampleRate.ir;
+			// in fact it is equal to the entire buffer length
+
 			var phaseOffset = (delayTime * SampleRate.ir).min(bufFrames-1);
 
-			var phaseWr = (Phasor.ar(rate:1, end: bufFrames)).wrap(0, loopFrames-1);
-			var phaseRd = (phaseWr - phaseOffset).wrap(0, loopFrames-1);
+			var phaseWr = (Phasor.ar(rate:1, end: bufFrames));
+			var phaseRd = (phaseWr - phaseOffset + bufFrames);
 
 			var previous = BufRd.ar(2, buffer, phaseWr);
 			var output = BufRd.ar(2, buffer, phaseRd);
@@ -227,9 +215,12 @@ ZCarouselParadox_Processor  {
 
 			outputDist = Array.fill(2, { arg i;
 				SelectX.ar(\distortShape.kr(0), [
+					/// NB: this is a highly inefficient approach!
+					/// all the distortion types are computed in parallel..
 					output[i].softclip,
-					output[i].distort,
-					sin(output[i]*1.5)*0.75
+					output[i].distort.distort,
+					output[i].tanh,
+					sin(output[i]*2)*0.77
 				])
 			});
 
@@ -248,8 +239,7 @@ ZCarouselParadox_Processor  {
 
 
 			// further processing applies to both the first-pass input and the feedback
-			// exercise: play with the routing of these processing steps
-
+			// try: play with the routing of these processing steps
 
 			// stereo image processing
 			input = ZCarouselParadox_StereoImage.midSideFlip(input,
@@ -275,7 +265,7 @@ ZCarouselParadox_Processor  {
 				SelectX.ar(freeze, [input[1], previous[1]]),
 			];
 
-			// write the buffer
+			// write to the buffer
 			BufWr.ar(input, buffer, phaseWr);
 
 			// and finally, output the delayed signal
@@ -292,7 +282,7 @@ ZCarouselParadox_Processor  {
 	}
 
 	init {
-		// NB: assumes that this is constructed in a Thread/Routine!
+
 		server = context.server;
 		buffer = Buffer.alloc(server, server.sampleRate * bufferLength, 2);
 		bus = Dictionary.newFrom([
@@ -300,11 +290,11 @@ ZCarouselParadox_Processor  {
 			\comp_gain, Bus.control(server, 1),
 		]);
 
+		// NB: assumes that this is constructed in a Thread/Routine!
 		server.sync;
 
 		synth = Synth.new(\ZCarouselProcessor, [
 			\buffer, buffer,
-			\loopTime, buffer.duration,
 			// NB: here's one place to change for different bus structure
 			\in, context.bus[\hw_in],
 			\out, context.bus[\hw_out],
