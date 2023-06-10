@@ -38,7 +38,7 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 ## extras
 
-- implemented a "freeze" mode that disables the write head. this transforms the processor into a looper, but that still undergoes modulation and pitch changes on the stored audio. it's kind of a wonky looper because the loop time is unrelated to the delay time (it's more tied to the underlying buffer,) and it has some artifacts that bother me.
+- implemented a "freeze" mode that disables the write head. this transforms the processor into a looper, but that still undergoes modulation and pitch changes on the stored audio. it's kind of a wonky looper because the loop time is **note settable** (ha!) after initialization time. i guess imagine this as a physical tape system where you are moving the play head, can disable the erase head, and have a processed signal path between read and write heads.
 
 - added some stereo processing to the input+feedback path: L/R inversion, L/R bias, mid/side balance
 

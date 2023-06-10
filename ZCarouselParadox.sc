@@ -632,6 +632,7 @@ ZCarouselParadox_Compander {
 			ZCarouselParadox_Compander.compEnvPeakDecay(input[0], envUpLag, envDownLag),
 			ZCarouselParadox_Compander.compEnvPeakDecay(input[1], envUpLag, envDownLag),
 		);
+
 		var gainCompress = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
 			thresholdCompress, slopeAbove, 1,
 			gainUpLagCompress, gainDownLagCompress);
