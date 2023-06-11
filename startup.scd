@@ -9,7 +9,7 @@ s.waitForBoot { Routine {
 
 	// removed the `loopTime` synth parameter since it always caused a click as implemented
 	// instead, made this classvar writable; it will be used as the buffer length for new processors
-	ZCarouselParadox_Processor.bufferLength = 24.0;
+	ZCarouselParadox_Processor.bufferLength = 32.0;
 
 	z = ZCarouselParadox.new(s, 2);
 
@@ -25,16 +25,16 @@ s.waitForBoot { Routine {
 	};
 
 	// feed back
-	z.processor.synth.set(\feedbackLevel, -4.dbamp);
+	z.setSynthParam(\feedbackLevel, -4.dbamp);
 	// ping pong
-	z.processor.synth.set(\stereoFlip, 1);
+	z.setSynthParam(\stereoFlip, 1);
 	// engage the expander
-	z.processor.synth.set(\thresholdExpand, -42);
-	z.processor.synth.set(\slopeBelow, 16);
+	z.setSynthParam(\thresholdExpand, -42);
+	z.setSynthParam(\slopeBelow, 16);
 	// really slow "attack"
-	z.processor.synth.set(\gainDownLagExpand, 1);
+	z.setSynthParam(\gainDownLagExpand, 1);
 	// extremely slow "release"
-	z.processor.synth.set(\gainUpLagExpand, 4);
+	z.setSynthParam(\gainUpLagExpand, 4);
 
 	// let's have a little level fader
 	~level_taper_break = -36.dbamp;
@@ -57,95 +57,99 @@ s.waitForBoot { Routine {
 	*/
 
 	// let's have a little UI
-	~ui_state = Dictionary.new;
-	// following params have stateful in
-	~ui_state[\freeze] = 0;
-	~ui_state[\time] = z.processor.echoTime;
-	~ui_state[\hpf] = 0;
-	~ui_state[\lpf] = 0;
+	// ~ui_state = Dictionary.new;
+	// /*	// following params have stateful in
+	// ~ui_state[\freeze] = 0;
+	// ~ui_state[\time] = z.processor.echoTime;
+	// ~ui_state[\hpf] = 0;
+	//	~ui_state[\lpf] = 0;*/
+
+	//  bloated enough to want a helper class
+	d = ZCarouselParadox_UiState.new(z);
 
 	{
 		w = Window("z-carousel-paradox", Rect(100, 200, 400, 300), false);
 		u = UserView(w, Rect(0, 0, w.bounds.width, w.bounds.height));
 		u.background = Color.black;
 		u.drawFunc = {
-			// FIXME: not efficient of course
+			d.draw;
+
+			/*	// FIXME: not efficient of course
 			~ui_state.keys.asArray.sort.do({ arg k, i;
-				var val = ~ui_state[k];
-				var p = 10@(i*15);
-				Pen.stringAtPoint(k.asString, p, color:Color.white);
-				Pen.stringAtPoint(val.asString, p.translate(100@0), color:Color.white);
-				if (k == \time, {
-					Pen.stringAtPoint(z.processor.echoTime.asString,
-						p.translate(200@0), color:Color.white);
-				});
+			var val = ~ui_state[k];
+			var p = 10@(i*15);
+			Pen.stringAtPoint(k.asString, p, color:Color.white);
+			Pen.stringAtPoint(val.asString, p.translate(100@0), color:Color.white);
+			if (k == \time, {
+			Pen.stringAtPoint(z.processor.echoTime.asString,
+			p.translate(200@0), color:Color.white);
 			});
+			});*/
 		};
 		w.front;
 	}.defer;
 
 	// all MIDI updates go through this to keep UI display in sync
-	~ui_set_midi = { arg key, value;
+	~ui_handle_midi = { arg key, value;
 		switch(key,
-			{\feedback}, {
-				~ui_state[key] = value;
-				z.setSynthParam(\feedbackLevel, ~level_taper.value(value));
+			{\feedbackLevel}, {
+				d.setValue(\feedbackLevel, value, ~level_taper.value(value));
 			},
-			{\flip}, {
-				~ui_state[key] = value;
-				z.setSynthParam(\stereoFlip, value.linlin(0, 127, 0, 1));
+			{\stereoFlip}, {
+				d.setValue(\stereoFlip, value, value.linlin(0, 127, 0, 1));
 			},
-			{\expansion}, {
-				~ui_state[key] = value;
-				z.setSynthParam(\thresholdExpand, value.linlin(0, 127, -48, 0));
+			{\thresholdExpand}, {
+				d.setValue(\thresholdExpand, value, value.linlin(0, 127, -48, 0));
 			},
 
 			{\freeze}, {
 				if (value > 0, {
-
-					if (~ui_state[\freeze] > 0, {
-						~ui_state[\freeze] = 0;
-					}, {
-						~ui_state[\freeze] = 1;
-					});
-					z.setSynthParam(\freeze, ~ui_state[\freeze]);
+					var newVal = if(d.getInput(\freeze) > 0, { 0 }, { 1 });
+					d.setValue(\freeze, newVal, newVal);
 				});
 			},
-			{\time}, {
-
+			{\delayTime}, {
 				// let's change echo time by discrete steps in log(2) domain
 				// this means the gesture should be reversible
 				// assuming the controller is sending [0, 127] and not a delta
-				z.processor.setEchoTime(
-					z.processor.echoTime
-					* if (~ui_state[\time] < value, {
-						1.1892071150027
-					}, {
+				d.setValue(\delayTime, value,
+					d.getOutput(\delayTime) * if(value < d.getInput(\delayTime), {
 						0.84089641525371
+					}, {
+						1.1892071150027
 					})
 				);
-				~ui_state[\time] = value;
 			},
 			{\distortAmount}, {
-				z.setSynthParam(\distortAmount, value.linlin(0, 127, 0, 1));
-				~ui_state[\distortAmount] = value;
+				d.setValue(\distortAmount, value, value.linlin(0, 127, 0, 1));
 			},
 			{\distortShape}, {
-				z.setSynthParam(\distortShape, value.linlin(0, 127, 0, 3));
-				~ui_state[\distortShape] = value;
+				d.setValue(\distortShape, value, value.linlin(0, 127, 0, 3));
 			},
 			{\hpf}, {
-				~ui_state[\hpf] = value.min(~ui_state[\lpf]-1);
-				z.setSynthParam(\hpf, ~ui_state[\hpf].midicps);
+				var newVal = value.max(d.getInput(\hpf) - 1);
+				d.setValue(\hpf, newVal, newVal.midicps);
 			},
 			{\lpf}, {
-				~ui_state[\lpf] = value.max(~ui_state[\hpf]+1);
-				z.setSynthParam(\lpf, ~ui_state[\lpf].midicps);
+				var newVal = value.max(d.getInput(\lpf) + 1);
+				d.setValue(\lpf, newVal, newVal.midicps);
 			}
 		);
 		{ u.refresh; }.defer;
 	};
 
+
+	//--- initial state
+	~ui_handle_midi.value(\feedbackLevel, 120);
+	~ui_handle_midi.value(\stereoFlip, 127);
+	~ui_handle_midi.value(\thresholdExpand, 40);
+//	~ui_handle_midi.value(\delayTime, 64);
+	~ui_handle_midi.value(\distortAmount, 0);
+	~ui_handle_midi.value(\distortShape, 0);
+	~ui_handle_midi.value(\hpf, 0);
+	~ui_handle_midi.value(\lpf, 127);
+
+//	~ui_handle_midi.value(\freeze, value);
 
 	// some more MIDI controls; customize to taste
 	// these 8 CCs happen to be how i have my controller knobs set up...
@@ -154,40 +158,40 @@ s.waitForBoot { Routine {
 	z.midiInput.verbose = true;
 
 	z.midiInput.cc(2, { arg value;
-		~ui_set_midi.value(\feedback, value);
+		~ui_handle_midi.value(\feedbackLevel, value);
 	});
 
 	z.midiInput.cc(7, { arg value;
-		~ui_set_midi.value(\flip, value);
+		~ui_handle_midi.value(\stereoFlip, value);
 	});
 
 	z.midiInput.cc(10, { arg value;
-		~ui_set_midi.value(\expansion, value);
+		~ui_handle_midi.value(\thresholdExpand, value);
 	});
 
 	z.midiInput.cc(11, { arg value;
-		~ui_set_midi.value(\time, value);
+		~ui_handle_midi.value(\delayTime, value);
 	});
 
 	z.midiInput.cc(12, { arg value;
-		~ui_set_midi.value(\distortAmount, value);
+		~ui_handle_midi.value(\distortAmount, value);
 	});
 
 	z.midiInput.cc(13, { arg value;
-		~ui_set_midi.value(\distortShape, value);
+		~ui_handle_midi.value(\distortShape, value);
 	});
 
 	z.midiInput.cc(71, { arg value;
-		~ui_set_midi.value(\hpf, value);
+		~ui_handle_midi.value(\hpf, value);
 	});
 
 	z.midiInput.cc(74, { arg value;
-		~ui_set_midi.value(\lpf, value);
+		~ui_handle_midi.value(\lpf, value);
 	});
 
 	// ... and these 8 are my pads
 	z.midiInput.cc(16, { arg value;
-		~ui_set_midi.value(\freeze, value);
+		~ui_handle_midi.value(\freeze, value);
 	});
 
 	z.midiInput.cc(17, { arg value;

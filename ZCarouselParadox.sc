@@ -227,7 +227,7 @@ ZCarouselParadox_Processor  {
 			output = Array.fill(2, { arg i;
 				SelectX.ar(\distortAmount.kr(0), [
 					output[i], outputDist[i]
-			])
+				])
 			});
 
 			// highpass and lowpass filtering
@@ -649,4 +649,69 @@ ZCarouselParadox_Compander {
 		^[input[0] * totalGain, input[1] * totalGain]
 	}
 
+}
+
+//----====----===----====
+// gui utility
+
+ZCarouselParadox_UiState{
+
+	classvar <keys;
+
+	var <carousel;
+	var <data;
+
+	*initClass {
+		keys = [
+			\feedbackLevel,
+			\delayTime,
+			\stereoFlip,
+			\thresholdExpand,
+			\distortAmount,
+			\distortShape,
+			\hpf,
+			\lpf,
+			\freeze
+		]
+	}
+
+	*new { arg carousel; ^super.newCopyArgs(carousel).init }
+
+	init {
+		// each entry is: [input (midi/toggle), output (whatever)]
+		data = Dictionary.with(*(keys.collect({ arg k;
+			k -> [0, 0.0]
+		})));
+		data.postln;
+	}
+
+	setValue { arg key, input, output, update=true;
+		data[key] = [input, output];
+		if(update, {
+			carousel.setSynthParam(key, output);
+		});
+	}
+
+	getInput { arg key;
+		postln("getInput " ++ key ++ " : " ++ data[key][0]);
+		^data[key][0]
+	}
+
+	getOutput { arg key;
+		postln("getOutput " ++ key ++ " : " ++ data[key][1]);
+		^data[key][1]
+	}
+
+	draw {
+		keys.do ({
+			arg k, i;
+			var input = data[k][0].asString;
+			var output = data[k][1];
+			var p = 10@(i*15);
+			output = if(output.isNumber, {output.round(0.0001)}, {output}).asString;
+			Pen.stringAtPoint(k.asString, p, color:Color.white);
+			Pen.stringAtPoint(input, p.translate(120@0), color:Color.white);
+			Pen.stringAtPoint(output, p.translate(220@0), color:Color.white);
+		});
+	}
 }
