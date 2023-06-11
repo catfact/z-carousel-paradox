@@ -268,8 +268,11 @@ ZCarouselParadox_Processor  {
 			// write to the buffer
 			BufWr.ar(input, buffer, phaseWr);
 
-			// and finally, output the delayed signal
+			// output the delayed signal
 			Out.ar(\out.kr(0), output * \level.kr(1));
+
+			// output the smoothed delay time at control rate
+			Out.kr(\outDelay.kr, A2K.kr(delayTime));
 
 		});
 		// post all our control names for reference
@@ -286,8 +289,9 @@ ZCarouselParadox_Processor  {
 		server = context.server;
 		buffer = Buffer.alloc(server, server.sampleRate * bufferLength, 2);
 		bus = Dictionary.newFrom([
-			\comp_env, Bus.control(server, 1),
-			\comp_gain, Bus.control(server, 1),
+			\compEnv, Bus.control(server, 1),
+			\compGain, Bus.control(server, 1),
+			\delayTime, Bus.control(server, 1);
 		]);
 
 		// NB: assumes that this is constructed in a Thread/Routine!
@@ -298,8 +302,9 @@ ZCarouselParadox_Processor  {
 			// NB: here's one place to change for different bus structure
 			\in, context.bus[\hw_in],
 			\out, context.bus[\hw_out],
-			\outEnv, bus[\comp_env],
-			\outGain, bus[\comp_gain],
+			\outEnv, bus[\compEnv],
+			\outGain, bus[\compGain],
+			\outDelay, bus[\delayTime]
 		], context.group[\process]);
 
 		echoTime = 1.0;
@@ -355,7 +360,8 @@ ZCarouselParadox_Processor  {
 
 	setEchoTime { arg time;
 		echoTime = time.min(bufferLength - 0.001);
-		synth.set(\delayTime, time);
+		synth.set(\delayTime, echoTime);
+		echoTime
 	}
 }
 
@@ -441,6 +447,7 @@ ZCarouselParadox_MidiController {
 	var <lastBaseNote;
 	var <numHeldNotes;
 	var <timeDelta;
+	var <>tapCallback;
 
 
 	*new { arg processor;
@@ -515,9 +522,14 @@ ZCarouselParadox_MidiController {
 	}
 
 	setTimeDelta { arg delta;
+		var actualTime;
 		postln("set time delta: " ++ delta);
 		timeDelta = delta;
-		processor.setEchoTime(delta);
+		actualTime = processor.setEchoTime(delta);
+		if (tapCallback.notNil, {
+			tapCallback.value(actualTime);
+		});
+
 	}
 
 	clearHeldNotes {
@@ -654,7 +666,7 @@ ZCarouselParadox_Compander {
 //----====----===----====
 // gui utility
 
-ZCarouselParadox_UiState{
+ZCarouselParadox_UiState {
 
 	classvar <keys;
 
@@ -688,8 +700,17 @@ ZCarouselParadox_UiState{
 	setValue { arg key, input, output, update=true;
 		data[key] = [input, output];
 		if(update, {
+			postln("carousel.setSynthParam("++key++", "++output++")");
 			carousel.setSynthParam(key, output);
 		});
+	}
+
+	setInput { arg key, value;
+		data[key][0] = value;
+	}
+
+	setOutput { arg key, value;
+		data[key][1] = value;
 	}
 
 	getInput { arg key;
@@ -713,5 +734,74 @@ ZCarouselParadox_UiState{
 			Pen.stringAtPoint(input, p.translate(120@0), color:Color.white);
 			Pen.stringAtPoint(output, p.translate(220@0), color:Color.white);
 		});
+	}
+}
+
+ZCarouselParadox_HistoryPlot {
+	classvar <paramCount = 2;
+	classvar <>historyCount = 128;
+	classvar <>maxTime = 32;
+
+	var <processor;
+	var <viewParent;
+	var <bounds;
+	var <view;
+	var <data;
+	var <frameInterval;
+	var <tickRoutine;
+
+	*new { arg processor, viewParent, bounds;
+		^super.newCopyArgs(processor, viewParent, bounds).init;
+	}
+
+	init {
+		data = Array.fill(paramCount, { LinkedList.new(historyCount) });
+		view = Array.fill(paramCount, {
+			arg i;
+			var b = bounds;
+			var h = bounds.height / paramCount;
+			bounds.height = h;
+			bounds.top = bounds.top + (h * i);
+			MultiSliderView.new(viewParent, b)
+			.elasticMode_(1)
+			.gap_(0)
+			.thumbSize_(0)
+			.drawRects_(true)
+			.isFilled_(true)
+		});
+
+		frameInterval = 1 / 15;
+
+		tickRoutine = Routine {
+			var displayValue = Array.newClear(2);
+			var cond = Condition.new;
+			inf.do {
+				// fetch all bus values;
+				cond.test = false;
+				processor.bus[\compGain].get({ arg val;
+					displayValue[0] = val.ampdb.max(-60).linlin(-60, 0, 0, 1);
+					cond.test = true;
+					cond.signal;
+				});
+				cond.wait;
+				cond.test = false;
+				processor.bus[\delayTime].get({ arg val;
+					displayValue[1] = val.linlin(0, maxTime, 0, 1);
+					cond.test = true;
+					cond.signal;
+				});
+				cond.wait;
+				// update the history and the views
+				paramCount.do({ arg i;
+					while ({data[i].size >= historyCount}, {
+						data[i].popFirst;
+					});
+					data[i].add(displayValue[i]);
+					{ view[i].value = data[i].asArray; }.defer;
+				});
+				{ viewParent.refresh; }.defer;
+				frameInterval.wait;
+			}
+		}.play;
 	}
 }

@@ -56,36 +56,23 @@ s.waitForBoot { Routine {
 	Array.series(128).collect({ arg x; ~level_taper.value(x).ampdb.max(-100) }).plot;
 	*/
 
-	// let's have a little UI
-	// ~ui_state = Dictionary.new;
-	// /*	// following params have stateful in
-	// ~ui_state[\freeze] = 0;
-	// ~ui_state[\time] = z.processor.echoTime;
-	// ~ui_state[\hpf] = 0;
-	//	~ui_state[\lpf] = 0;*/
-
-	//  bloated enough to want a helper class
+	//  UI state mgmt got bloated enough to want a helper class
 	d = ZCarouselParadox_UiState.new(z);
+	z.midiController.tapCallback = { arg delta; d.setOutput(\delayTime, delta) };
 
+	// GUI display elements (views)
 	{
 		w = Window("z-carousel-paradox", Rect(100, 200, 400, 300), false);
 		u = UserView(w, Rect(0, 0, w.bounds.width, w.bounds.height));
 		u.background = Color.black;
 		u.drawFunc = {
 			d.draw;
-
-			/*	// FIXME: not efficient of course
-			~ui_state.keys.asArray.sort.do({ arg k, i;
-			var val = ~ui_state[k];
-			var p = 10@(i*15);
-			Pen.stringAtPoint(k.asString, p, color:Color.white);
-			Pen.stringAtPoint(val.asString, p.translate(100@0), color:Color.white);
-			if (k == \time, {
-			Pen.stringAtPoint(z.processor.echoTime.asString,
-			p.translate(200@0), color:Color.white);
-			});
-			});*/
 		};
+
+		// also a little class to show history plots
+		ZCarouselParadox_HistoryPlot.maxTime = ZCarouselParadox_Processor.bufferLength;
+		v = ZCarouselParadox_HistoryPlot.new(z.processor, w, Rect(0, 220, 400, 160));
+
 		w.front;
 	}.defer;
 
@@ -127,11 +114,11 @@ s.waitForBoot { Routine {
 				d.setValue(\distortShape, value, value.linlin(0, 127, 0, 3));
 			},
 			{\hpf}, {
-				var newVal = value.max(d.getInput(\hpf) - 1);
+				var newVal = value.min(d.getInput(\lpf) - 1);
 				d.setValue(\hpf, newVal, newVal.midicps);
 			},
 			{\lpf}, {
-				var newVal = value.max(d.getInput(\lpf) + 1);
+				var newVal = value.max(d.getInput(\hpf) + 1);
 				d.setValue(\lpf, newVal, newVal.midicps);
 			}
 		);
@@ -143,13 +130,13 @@ s.waitForBoot { Routine {
 	~ui_handle_midi.value(\feedbackLevel, 120);
 	~ui_handle_midi.value(\stereoFlip, 127);
 	~ui_handle_midi.value(\thresholdExpand, 40);
-//	~ui_handle_midi.value(\delayTime, 64);
+	//~ui_handle_midi.value(\delayTime, 64);
+	// needs special handling:
+	d.setValue(\delayTime, 64, 1, false);
 	~ui_handle_midi.value(\distortAmount, 0);
 	~ui_handle_midi.value(\distortShape, 0);
 	~ui_handle_midi.value(\hpf, 0);
 	~ui_handle_midi.value(\lpf, 127);
-
-//	~ui_handle_midi.value(\freeze, value);
 
 	// some more MIDI controls; customize to taste
 	// these 8 CCs happen to be how i have my controller knobs set up...
