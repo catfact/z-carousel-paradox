@@ -361,7 +361,7 @@ ZCarouselParadox_Processor  {
 	setEchoTime { arg time;
 		echoTime = time.min(bufferLength - 0.001);
 		synth.set(\delayTime, echoTime);
-		echoTime
+		^echoTime
 	}
 }
 
