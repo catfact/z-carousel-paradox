@@ -213,8 +213,8 @@ ZCarouselParadox_Processor  {
 			// "freeze" interpolation signal
 			var freeze = Lag.ar(K2A.ar(\freeze.kr(0)), \freezeLag.kr(0.2));
 
-			var feedCompMix = \feedbackCompandMix.kr(1);
-			var inCompMix = \inputCompandMix.kr(1);
+			// var feedCompMix = \feedbackCompandMix.kr(1);
+			// var inCompMix = \inputCompandMix.kr(1);
 
 			var input, feedback, outputDist, compDryBus, compWetBus;
 
@@ -224,9 +224,9 @@ ZCarouselParadox_Processor  {
 				SelectX.ar(\distortShape.kr(0), [
 					output[i].softclip,
 					output[i].tanh,
-					output[i].distort.distort * 2,
-					output[i].distort.distort.distort * 4,
-					sin(output[i]*2)
+					output[i].distort.distort,
+					output[i].distort.distort.distort.distort,
+					sin(output[i]*4)
 				])
 			});
 
@@ -243,7 +243,6 @@ ZCarouselParadox_Processor  {
 
 			input = In.ar(\in.kr, 2) ;
 
-
 			// further processing applies to both the first-pass input and the feedback
 			// try: play with the routing of these processing steps
 
@@ -252,31 +251,39 @@ ZCarouselParadox_Processor  {
 			// if they have same settings, the duplication is weird,
 			// but can't see a way around it, given bus structure  needed by FB compand mix
 			input = ZCarouselParadox_StereoImage.midSideFlip(input,
-				\inputStereoMidGain.kr(1), \inputStereoSideGain.kr(1), \inputStereoBias.kr(0), \inputStereoFlip.kr(0));
+				\inputStereoMidGain.kr(1), \inputStereoSideGain.kr(1),
+				\inputStereoBias.kr(0), \inputStereoFlip.kr(0));
 
 			feedback = ZCarouselParadox_StereoImage.midSideFlip(feedback,
-				\feedbackStereoMidGain.kr(1), \feedbackStereoSideGain.kr(1), \feedbackStereoBias.kr(0), \stereoFlip.kr(0));
+				\feedbackStereoMidGain.kr(1), \feedbackStereoSideGain.kr(1),
+				\feedbackStereoBias.kr(0), \feedbackStereoFlip.kr(0));
 
-			///--- companding
-			compWetBus = ((input*inCompMix) + (feedback * feedCompMix));
-			compDryBus = ((input*(1-inCompMix)) + (feedback * (1-feedCompMix)));
+			//--- companding
 
-			compWetBus = ZCarouselParadox_Compander.compandStereo(compWetBus,
-				// control rate output busses for envelope and gain:
-				\outEnv.kr, \outGain.kr,
-				// compander parameters:
-				\thresholdCompress.kr(-12), \thresholdExpand.kr(-36),
-				\slopeAbove.kr(1), \slopeBelow.kr(1),
-				// input envelope smoothing:
-				\compEnvAttack.kr(0.01), \compEnvRelease.kr(0.1),
-				// output gain smoothing:
-				\gainUpLagCompress.kr(0.01), \gainDownLagCompress.kr(0.1),
-				\gainUpLagExpand.kr(0.01), \gainDownLagExpand.kr(0.1)
+			input = ZCarouselParadox_Compander.compandStereo(input,
+				\outInputEnv.kr, \outInputGain.kr,
+				\inputThresholdCompress.kr(-12), \inputThresholdExpand.kr(-36),
+				\inputSlopeAbove.kr(1), \inputSlopeBelow.kr(1),
+				\inputCompEnvAttack.kr(0.01), \inputCompEnvRelease.kr(0.1),
+				\inputGainUpLagCompress.kr(0.01), \inputGainDownLagCompress.kr(0.1),
+				\inputGainLagExpand.kr(0.01), \inputGainDownLagExpand.kr(0.1)
 			);
 
-			input = compWetBus + compDryBus;
+			feedback = ZCarouselParadox_Compander.compandStereo(feedback,
+				\outFeedbackEnv.kr, \outFeedbackGain.kr,
+				\feedbackThresholdCompress.kr(0), \feedbackThresholdExpand.kr(-60),
+				\feedbackSlopeAbove.kr(1), \feedbackSlopeBelow.kr(1),
+				\feedbackCompEnvAttack.kr(0.01), \feedbackCompEnvRelease.kr(0.1),
+				\feedbackGainUpLagCompress.kr(0.01), \feedbackGainDownLagCompress.kr(0.1),
+				\feedbackGainUpLagExpand.kr(0.01), \feedbackGainDownLagExpand.kr(0.1)
+			);
 
-			// mix with previous buffer contents
+			feedback = Sanitize.ar(feedback);
+
+			// mix input with processed feedback
+			input = input + feedback;
+
+			// mix input with previous contents
 			input = [
 				SelectX.ar(freeze, [input[0], previous[0]]),
 				SelectX.ar(freeze, [input[1], previous[1]]),
@@ -306,8 +313,10 @@ ZCarouselParadox_Processor  {
 		server = context.server;
 		buffer = Buffer.alloc(server, server.sampleRate * bufferLength, 2);
 		bus = Dictionary.newFrom([
-			\compEnv, Bus.control(server, 1),
-			\compGain, Bus.control(server, 1),
+			\inputCompEnv, Bus.control(server, 1),
+			\inputCompGain, Bus.control(server, 1),
+			\feedbackCompEnv, Bus.control(server, 1),
+			\feedbackCompGain, Bus.control(server, 1),
 			\delayTime, Bus.control(server, 1);
 		]);
 
@@ -319,8 +328,10 @@ ZCarouselParadox_Processor  {
 			// NB: here's one place to change for different bus structure
 			\in, context.bus[\hw_in],
 			\out, context.bus[\hw_out],
-			\outEnv, bus[\compEnv],
-			\outGain, bus[\compGain],
+			\outInputEnv, bus[\inputCompEnv],
+			\outInputGain, bus[\inputCompGain],
+			\outFeedbackEnv, bus[\feedbackCompEnv],
+			\outFeedbackGain, bus[\feedbackCompGain],
 			\outDelay, bus[\delayTime]
 		], context.group[\process]);
 
@@ -619,15 +630,15 @@ ZCarouselParadox_Compander {
 
 
 	// compute compander gain with hard knee
+	// NB / OPTIMIZE: .ampdb and .dbamp are very costly at audio rate
+	// fast and usable approximations should be possible
 	*compGainHardKnee {
 		arg env, threshDb, slopeAbove, slopeBelow, upLag, downLag;
-		// OPTIMIZE: approximate .ampdb for reasonable range
 		var envDb = env.ampdb;
 		var deltaDb = envDb - threshDb;
 		var newTargetDb = threshDb + (deltaDb * if(envDb > threshDb, slopeAbove, slopeBelow));
 		var gainDb = newTargetDb - envDb;
 		// TRY: apply gain smoothing in different domains besides linear amplitude
-		// OPTIMIZE: approximate .dbamp for reasonable range
 		gainDb = LagUD.ar(gainDb.dbamp, upLag, downLag);
 		^gainDb
 	}
@@ -639,29 +650,36 @@ ZCarouselParadox_Compander {
 	// put companding functions together
 	*compandStereo {
 		arg input, // assume input is 2-channel array
+		// output busses
 		outEnv,
 		outGain,
-
 		// separate thresholds for comp and expand
 		// this is best done here rather than making separate compander blocks,
-		// because this way we can re-use the (expensive) input envelope calculation
+		// because this way we can re-use the (maybe expensive) input envelope calculation
 		thresholdCompress = -12,
 		thresholdExpand = -36,
-		slopeAbove, slopeBelow,
+		slopeAbove=1,
+		slopeBelow=1,
 		// i totally confused myself with "attack" and "release" while making this.
 		// "attack" would traditionally mean when gain is *decreasing*,
 		// but input amplitude is *increasing*,
 		// and vice versa for "release."
 		// let's use a consistent and more low-level terminology here:
 		// the rising or falling integration time constants.
-		envUpLag=0.002, envDownLag=0.01,
-		gainUpLagCompress=0.008, gainDownLagCompress=0.05,
-		gainUpLagExpand=0.5, gainDownLagExpand=0.1;
+		envUpLag=0.002,
+		envDownLag=0.01,
+		gainUpLagCompress=0.008,
+		gainDownLagCompress=0.05,
+		gainUpLagExpand=0.5,
+		gainDownLagExpand=0.1,
+		dryMix=0,
+		wetMix=1;
 
 		var inputEnvelope = max(
 			ZCarouselParadox_Compander.compEnvPeakDecay(input[0], envUpLag, envDownLag),
 			ZCarouselParadox_Compander.compEnvPeakDecay(input[1], envUpLag, envDownLag),
 		);
+
 		var gainCompress = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
 			thresholdCompress, slopeAbove, 1,
 			gainUpLagCompress, gainDownLagCompress);
@@ -675,7 +693,13 @@ ZCarouselParadox_Compander {
 		Out.kr(outEnv, A2K.kr(inputEnvelope));
 		Out.kr(outGain, A2K.kr(totalGain));
 
-		^[input[0] * totalGain, input[1] * totalGain]
+		dryMix = dryMix * totalGain;
+		wetMix = wetMix * totalGain;
+
+		^[
+			(dryMix * input[0]) + (wetMix * input[0]),
+			(dryMix * input[1]) + (wetMix * input[1])
+		]
 	}
 
 }
@@ -695,7 +719,7 @@ ZCarouselParadox_UiState {
 			\feedbackLevel,
 			\delayTime,
 			\feedbackStereoFlip,
-			\thresholdExpand,
+			\inputThresholdExpand,
 			\distortAmount,
 			\distortShape,
 			\hpf,
@@ -755,7 +779,7 @@ ZCarouselParadox_UiState {
 }
 
 ZCarouselParadox_HistoryPlot {
-	classvar <paramCount = 2;
+	classvar <paramCount = 3;
 	classvar <>historyCount = 128;
 	classvar <>maxTime = 32;
 
@@ -772,13 +796,22 @@ ZCarouselParadox_HistoryPlot {
 	}
 
 	init {
+		"param count: ".postln;
+		paramCount.postln;
 		data = Array.fill(paramCount, { LinkedList.new(historyCount) });
+
 		view = Array.fill(paramCount, {
 			arg i;
-			var b = bounds;
+			var b = bounds.copy;
 			var h = bounds.height / paramCount;
-			bounds.height = h;
-			bounds.top = bounds.top + (h * i);
+			//			h.postln;
+			b.height = h;
+			b.top = bounds.top + (h * i);
+			"input bounds: ".postln;
+			bounds.postln;
+
+			"view bounds: ".postln;
+			b.postln;
 			MultiSliderView.new(viewParent, b)
 			.elasticMode_(1)
 			.gap_(0)
@@ -791,20 +824,28 @@ ZCarouselParadox_HistoryPlot {
 		frameInterval = 1 / 15;
 
 		tickRoutine = Routine {
-			var displayValue = Array.newClear(2);
+			var displayValue = Array.newClear(paramCount);
 			var cond = Condition.new;
 			inf.do {
 				// fetch all bus values;
 				cond.test = false;
-				processor.bus[\compGain].get({ arg val;
+				processor.bus[\inputCompGain].get({ arg val;
 					displayValue[0] = val.ampdb.max(-60).linlin(-60, 0, 0, 1);
 					cond.test = true;
 					cond.signal;
 				});
 				cond.wait;
 				cond.test = false;
+
+				processor.bus[\feedbackCompGain].get({ arg val;
+					displayValue[1] = val.ampdb.max(-60).linlin(-60, 0, 0, 1);
+					cond.test = true;
+					cond.signal;
+				});
+				cond.wait;
+				cond.test = false;
 				processor.bus[\delayTime].get({ arg val;
-					displayValue[1] = val.linlin(0, maxTime, 0, 1);
+					displayValue[2] = val.linlin(0, maxTime, 0, 1);
 					cond.test = true;
 					cond.signal;
 				});

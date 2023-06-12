@@ -1,5 +1,8 @@
 s = Server.default;
 // s.options.device = "Steinberg UR-RT2";
+// ~mono_input = false;
+
+~mono_input = true;
 
 s.waitForBoot { Routine {
 
@@ -11,7 +14,7 @@ s.waitForBoot { Routine {
 	// instead, made this classvar writable; it will be used as the buffer length for new processors
 	ZCarouselParadox_Processor.bufferLength = 32.0;
 
-	z = ZCarouselParadox.new(s, 1);
+	z = ZCarouselParadox.new(s, if(~mono_input, {1}, {2}));
 
 	{
 		z.bus[\hw_out].scope;
@@ -28,13 +31,21 @@ s.waitForBoot { Routine {
 	z.setSynthParam(\feedbackLevel, -4.dbamp);
 	// ping pong
 	z.setSynthParam(\stereoFlip, 1);
-	// engage the expander
-	z.setSynthParam(\thresholdExpand, -42);
-	z.setSynthParam(\slopeBelow, 16);
-	// really slow "attack"
-	z.setSynthParam(\gainDownLagExpand, 1);
-	// extremely slow "release"
-	z.setSynthParam(\gainUpLagExpand, 4);
+	if (~mono_input, { z.setSynthParam(\inputStereoBias, -0.7); });
+
+	// set input compander as a gate
+	z.setSynthParam(\inputThresholdExpand, -16);
+	z.setSynthParam(\inputGainUpLagExpand, 0.6);
+	z.setSynthParam(\inputGainUpLagExpand, 0.01);
+	z.setSynthParam(\inputSlopeBelow, 16);
+	z.setSynthParam(\inputGainDownLagExpand, 01);
+	z.setSynthParam(\inputGainUpLagExpand, 0.6);
+
+	// set feedback compander as a compressor
+	z.setSynthParam(\feedbackThresholdCompress, -18);
+	z.setSynthParam(\feedbackSlopeAbove, 0.3);
+	z.setSynthParam(\feedbackGainDownLagCompress, 0.04);
+	z.setSynthParam(\feedbackGainDownLagCompress, 0.09);
 
 	// let's have a little level fader
 	~level_taper_break = -36.dbamp;
@@ -62,7 +73,7 @@ s.waitForBoot { Routine {
 
 	// GUI display elements (views)
 	{
-		w = Window("z-carousel-paradox", Rect(100, 200, 400, 300), false);
+		w = Window("z-carousel-paradox", Rect(100, 200, 400, 520), false);
 		u = UserView(w, Rect(0, 0, w.bounds.width, w.bounds.height));
 		u.background = Color.black;
 		u.drawFunc = {
@@ -71,7 +82,7 @@ s.waitForBoot { Routine {
 
 		// also a little class to show history plots
 		ZCarouselParadox_HistoryPlot.maxTime = ZCarouselParadox_Processor.bufferLength;
-		v = ZCarouselParadox_HistoryPlot.new(z.processor, w, Rect(0, 220, 400, 160));
+		v = ZCarouselParadox_HistoryPlot.new(z.processor, w, Rect(0, 280, 400, 240));
 
 		w.front;
 	}.defer;
@@ -82,11 +93,11 @@ s.waitForBoot { Routine {
 			{\feedbackLevel}, {
 				d.setValue(\feedbackLevel, value, ~level_taper.value(value));
 			},
-			{\stereoFlip}, {
-				d.setValue(\stereoFlip, value, value.linlin(0, 127, 0, 1));
+			{\feedbackStereoFlip}, {
+				d.setValue(\feedbackStereoFlip, value, value.linlin(0, 127, 0, 1));
 			},
-			{\thresholdExpand}, {
-				d.setValue(\thresholdExpand, value, value.linlin(0, 127, -48, 0));
+			{\inputThresholdExpand}, {
+				d.setValue(\inputThresholdExpand, value, value.linlin(0, 127, -48, 0));
 			},
 
 			{\freeze}, {
@@ -111,7 +122,7 @@ s.waitForBoot { Routine {
 				d.setValue(\distortAmount, value, value.linlin(0, 127, 0, 1));
 			},
 			{\distortShape}, {
-				d.setValue(\distortShape, value, value.linlin(0, 127, 0, 3));
+				d.setValue(\distortShape, value, value.linlin(0, 127, 0, 5));
 			},
 			{\hpf}, {
 				var newVal = value.min(d.getInput(\lpf) - 1);
@@ -128,8 +139,8 @@ s.waitForBoot { Routine {
 
 	//--- initial state
 	~ui_handle_midi.value(\feedbackLevel, 120);
-	~ui_handle_midi.value(\stereoFlip, 127);
-	~ui_handle_midi.value(\thresholdExpand, 40);
+	~ui_handle_midi.value(\feedbackStereoFlip, 127);
+	~ui_handle_midi.value(\inputThresholdExpand, 40);
 	//~ui_handle_midi.value(\delayTime, 64);
 	// needs special handling:
 	d.setValue(\delayTime, 64, 1, false);
@@ -149,11 +160,11 @@ s.waitForBoot { Routine {
 	});
 
 	z.midiInput.cc(7, { arg value;
-		~ui_handle_midi.value(\stereoFlip, value);
+		~ui_handle_midi.value(\feedbackStereoFlip, value);
 	});
 
 	z.midiInput.cc(10, { arg value;
-		~ui_handle_midi.value(\thresholdExpand, value);
+		~ui_handle_midi.value(\inputThresholdExpand, value);
 	});
 
 	z.midiInput.cc(11, { arg value;
