@@ -816,9 +816,13 @@ ZCarouselParadox_HistoryPlot {
 			.elasticMode_(1)
 			.gap_(0)
 			.thumbSize_(0)
-			.drawRects_(true)
+			.drawRects_(false)
 			.drawLines_(true)
 			.isFilled_(true)
+			.showIndex_(false)
+			.strokeColor_(Color.white)
+			.fillColor_(Color.gray)
+			.backColor_(Color.black)
 		});
 
 		frameInterval = 1 / 15;
