@@ -215,12 +215,13 @@ ZCarouselParadox_Processor  {
 
 			outputDist = Array.fill(2, { arg i;
 				SelectX.ar(\distortShape.kr(0), [
-					/// NB: this is a highly inefficient approach!
+					/// NB / FIXME: this is highly inefficient!!!
 					/// all the distortion types are computed in parallel..
 					output[i].softclip,
-					output[i].distort.distort,
 					output[i].tanh,
-					sin(output[i]*2)*0.77
+					output[i].distort.distort * 2,
+					output[i].distort.distort.distort * 4,
+					sin(output[i]*2)
 				])
 			});
 
@@ -603,13 +604,15 @@ ZCarouselParadox_Compander {
 
 	// compute compander gain with hard knee
 	*compGainHardKnee {
-		arg env, threshDb, slopeAbove, slopeBelow, attack, release;
+		arg env, threshDb, slopeAbove, slopeBelow, upLag, downLag;
+		// OPTIMIZE: approximate .ampdb for reasonable range
 		var envDb = env.ampdb;
 		var deltaDb = envDb - threshDb;
 		var newTargetDb = threshDb + (deltaDb * if(envDb > threshDb, slopeAbove, slopeBelow));
 		var gainDb = newTargetDb - envDb;
-		// try: apply gain smoothing in different domains besides linear amplitude
-		gainDb = LagUD.ar(gainDb.dbamp, release, attack);
+		// TRY: apply gain smoothing in different domains besides linear amplitude
+		// OPTIMIZE: approximate .dbamp for reasonable range
+		gainDb = LagUD.ar(gainDb.dbamp, upLag, downLag);
 		^gainDb
 	}
 
@@ -622,8 +625,8 @@ ZCarouselParadox_Compander {
 		arg input, // assume input is 2-channel array
 		outEnv,
 		outGain,
-		/// refinement:
-		// provide separate thresholds for comp and expand
+
+		// separate thresholds for comp and expand
 		// this is best done here rather than making separate compander blocks,
 		// because this way we can re-use the (expensive) input envelope calculation
 		thresholdCompress = -12,
@@ -636,7 +639,6 @@ ZCarouselParadox_Compander {
 		// let's use a consistent and more low-level terminology here:
 		// the rising or falling integration time constants.
 		envUpLag=0.002, envDownLag=0.01,
-		// effectively we are cascading two amplitude smoothers for envelope and
 		gainUpLagCompress=0.008, gainDownLagCompress=0.05,
 		gainUpLagExpand=0.5, gainDownLagExpand=0.1;
 
@@ -644,7 +646,6 @@ ZCarouselParadox_Compander {
 			ZCarouselParadox_Compander.compEnvPeakDecay(input[0], envUpLag, envDownLag),
 			ZCarouselParadox_Compander.compEnvPeakDecay(input[1], envUpLag, envDownLag),
 		);
-
 		var gainCompress = ZCarouselParadox_Compander.compGainHardKnee(inputEnvelope,
 			thresholdCompress, slopeAbove, 1,
 			gainUpLagCompress, gainDownLagCompress);
