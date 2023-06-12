@@ -199,24 +199,29 @@ ZCarouselParadox_Processor  {
 			// additionally: when we disable the write head, we'll hear buffer contents on a loop,
 			// and this loop length is separate from the delay time!
 			// in fact it is equal to the entire buffer length
-
+			// (seems possible to change this, but first attempt had artifacts)
 			var phaseOffset = (delayTime * SampleRate.ir).min(bufFrames-1);
 
+			//  write-head phasor
 			var phaseWr = (Phasor.ar(rate:1, end: bufFrames));
+			// read head follows behind; offset to keep from going negative
 			var phaseRd = (phaseWr - phaseOffset + bufFrames);
-
+			// to fake a disabled write head, use a read head with the same phasor
 			var previous = BufRd.ar(2, buffer, phaseWr);
+			// get the output early in the graph for feedback processing
 			var output = BufRd.ar(2, buffer, phaseRd);
-
 			// "freeze" interpolation signal
 			var freeze = Lag.ar(K2A.ar(\freeze.kr(0)), \freezeLag.kr(0.2));
 
-			var input, feedback, outputDist;
+			var feedCompMix = \feedbackCompandMix.kr(1);
+			var inCompMix = \inputCompandMix.kr(1);
 
+			var input, feedback, outputDist, compDryBus, compWetBus;
+
+			/// NB / FIXME: this is highly inefficient!!!
+			/// all the distortion types are computed in parallel, and they are quite expensive
 			outputDist = Array.fill(2, { arg i;
 				SelectX.ar(\distortShape.kr(0), [
-					/// NB / FIXME: this is highly inefficient!!!
-					/// all the distortion types are computed in parallel..
 					output[i].softclip,
 					output[i].tanh,
 					output[i].distort.distort * 2,
@@ -231,23 +236,32 @@ ZCarouselParadox_Processor  {
 				])
 			});
 
-			// highpass and lowpass filtering
+			//--- highpass and lowpass filtering
 			output = LPF.ar(HPF.ar(output, \hpf.kr(20)), \lpf.kr(18000));
 
 			feedback = output *  \feedbackLevel.kr(0);
-			// sum input with feedback
-			input = In.ar(\in.kr, 2) + feedback;
+
+			input = In.ar(\in.kr, 2) ;
 
 
 			// further processing applies to both the first-pass input and the feedback
 			// try: play with the routing of these processing steps
 
-			// stereo image processing
+			//--- stereo image processing
+			// NB / FIXME?: maybe separate settings for input / feedback?
+			// if they have same settings, the duplication is weird,
+			// but can't see a way around it, given bus structure  needed by FB compand mix
 			input = ZCarouselParadox_StereoImage.midSideFlip(input,
-				\stereoMidGain.kr(1), \stereoSideGain.kr(1), \stereoBias.kr(0), \stereoFlip.kr(0));
+				\inputStereoMidGain.kr(1), \inputStereoSideGain.kr(1), \inputStereoBias.kr(0), \inputStereoFlip.kr(0));
 
-			// companding
-			input = ZCarouselParadox_Compander.compandStereo(input,
+			feedback = ZCarouselParadox_StereoImage.midSideFlip(feedback,
+				\feedbackStereoMidGain.kr(1), \feedbackStereoSideGain.kr(1), \feedbackStereoBias.kr(0), \stereoFlip.kr(0));
+
+			///--- companding
+			compWetBus = ((input*inCompMix) + (feedback * feedCompMix));
+			compDryBus = ((input*(1-inCompMix)) + (feedback * (1-feedCompMix)));
+
+			compWetBus = ZCarouselParadox_Compander.compandStereo(compWetBus,
 				// control rate output busses for envelope and gain:
 				\outEnv.kr, \outGain.kr,
 				// compander parameters:
@@ -259,6 +273,8 @@ ZCarouselParadox_Processor  {
 				\gainUpLagCompress.kr(0.01), \gainDownLagCompress.kr(0.1),
 				\gainUpLagExpand.kr(0.01), \gainDownLagExpand.kr(0.1)
 			);
+
+			input = compWetBus + compDryBus;
 
 			// mix with previous buffer contents
 			input = [
@@ -678,7 +694,7 @@ ZCarouselParadox_UiState {
 		keys = [
 			\feedbackLevel,
 			\delayTime,
-			\stereoFlip,
+			\feedbackStereoFlip,
 			\thresholdExpand,
 			\distortAmount,
 			\distortShape,
@@ -732,8 +748,8 @@ ZCarouselParadox_UiState {
 			var p = 10@(i*15);
 			output = if(output.isNumber, {output.round(0.0001)}, {output}).asString;
 			Pen.stringAtPoint(k.asString, p, color:Color.white);
-			Pen.stringAtPoint(input, p.translate(120@0), color:Color.white);
-			Pen.stringAtPoint(output, p.translate(220@0), color:Color.white);
+			Pen.stringAtPoint(input, p.translate(160@0), color:Color.white);
+			Pen.stringAtPoint(output, p.translate(280@0), color:Color.white);
 		});
 	}
 }
@@ -768,6 +784,7 @@ ZCarouselParadox_HistoryPlot {
 			.gap_(0)
 			.thumbSize_(0)
 			.drawRects_(true)
+			.drawLines_(true)
 			.isFilled_(true)
 		});
 

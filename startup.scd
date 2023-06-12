@@ -1,5 +1,5 @@
 s = Server.default;
-s.options.device = "Steinberg UR-RT2";
+// s.options.device = "Steinberg UR-RT2";
 
 s.waitForBoot { Routine {
 
@@ -11,7 +11,7 @@ s.waitForBoot { Routine {
 	// instead, made this classvar writable; it will be used as the buffer length for new processors
 	ZCarouselParadox_Processor.bufferLength = 32.0;
 
-	z = ZCarouselParadox.new(s, 2);
+	z = ZCarouselParadox.new(s, 1);
 
 	{
 		z.bus[\hw_out].scope;
