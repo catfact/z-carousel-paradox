@@ -38,7 +38,7 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 ## extras
 
-- implemented a "freeze" mode that disables the write head. this transforms the processor into a looper, but that still undergoes modulation and pitch changes on the stored audio. it's kind of a wonky looper because the loop time is **note settable** (ha!) after initialization time. i guess imagine this as a physical tape system where you are moving the play head, can disable the erase head, and have a processed signal path between read and write heads.
+- implemented a "freeze" mode that disables the write head. this transforms the processor into a looper, but that still undergoes modulation and pitch changes on the stored audio. it's kind of a wonky looper because the loop time is **not settable** (ha!) after initialization time. i guess imagine this as a physical tape system where you are moving the play head, can disable the erase head, and have a processed signal path between read and write heads.
 
 - added some stereo processing to the input+feedback path: L/R inversion, L/R bias, mid/side balance
 
@@ -57,12 +57,6 @@ there are no big reasons for any of this except that it's a little simplified, a
 - there are quite possibly bugs in the control mechanism and pedal handling, i've mostly played without the pedals (and maybe the design can be made more useful there)
 
 - the looping mechanism is sort of a half-baked experiment. it would be more effective to simply put a dedicated looping module in series after the effect... or possibly to set feedback gain to unity and bypass all other live input and feedback processing. (the problem there is that delay modulation artifacts will still be written to the buffer... hm.)
-
-- i have noticed some minor but still irritating clicks and pops. i think these are again related to the phase wrapping logic called for by the "freeze" mechanism. 
-
-- i would like to add some more realtime visualizations of the processor state, particularly:
-  - compander envelope and gain (already on a control bus, need to draw it)
-  - current state of smoothed / slewed delay time
 
 - build out the other UI a tiny bit more. (e.g. i'd like to see final parameter values in real units, in addition to MIDI input values.)
 
