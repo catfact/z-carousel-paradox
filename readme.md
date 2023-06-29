@@ -46,7 +46,7 @@ there are no big reasons for any of this except that it's a little simplified, a
 
 - added some rather quick and arbitrary distortion / softclipping to the output and feedback path
 
-- added an extremely basic and minimal UI that shows mapped parameter values
+- added an extremely basic and minimal UI that shows mapped parameter values and realtime compander gain
 
 - added a delay time control that is accumulative in the log(2) domain. effectively this means the tapped tempo acts as a "base time" and the "time knob" changes it in fractions of a golden ratio.
 
